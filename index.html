@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>EletraLog TMS | Gestão Logística</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -28,7 +29,25 @@
                 </div>
                 <div class="sub-menu">
                     <div class="sub-item" onclick="loadPage('Equipamento', 'CADASTROS')">Equipamento</div>
+                    <div class="sub-item" onclick="loadPage('Cliente', 'CADASTROS')">Cliente</div>
+                    <div class="sub-item" onclick="loadPage('Produto', 'CADASTROS')">Produto</div>
+                    <div class="sub-item" onclick="loadPage('Fornecedor', 'CADASTROS')">Fornecedor</div>
                     <div class="sub-item" onclick="loadPage('Transportadora', 'CADASTROS')">Transportadora</div>
+                    <div class="sub-item" onclick="loadPage('Motorista', 'CADASTROS')">Motorista</div>
+                    <div class="sub-item" onclick="loadPage('Itinerários', 'CADASTROS')">Itinerários</div>
+                    <div class="sub-item" onclick="loadPage('Tabelas de Frete', 'CADASTROS')">Tabelas de Frete</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-plan">
+                <div class="module-header" onclick="toggleModule('mod-plan')">
+                    <span><i class="fa-solid fa-route main-icon"></i> PLANEJAMENTO</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Carga de pedidos', 'PLANEJAMENTO')">Carga de pedidos</div>
+                    <div class="sub-item" onclick="loadPage('Consolidação de Carga', 'PLANEJAMENTO')">Consolidação de Carga</div>
+                    <div class="sub-item" onclick="loadPage('Roteirizador', 'PLANEJAMENTO')">Roteirizador</div>
+                    <div class="sub-item" onclick="loadPage('Ordens de embarque', 'PLANEJAMENTO')">Ordens de embarque</div>
                 </div>
             </div>
 
@@ -37,7 +56,34 @@
                     <span><i class="fa-solid fa-truck-fast main-icon"></i> TRANSPORTE</span><i class="fa-solid fa-chevron-down fa-xs"></i>
                 </div>
                 <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Viagens', 'TRANSPORTE')">Viagens</div>
                     <div class="sub-item" onclick="loadPage('Agendamentos', 'TRANSPORTE')">Agendamentos</div>
+                    <div class="sub-item" onclick="loadPage('Manifestos', 'TRANSPORTE')">Manifestos</div>
+                    <div class="sub-item" onclick="loadPage('Aditivos', 'TRANSPORTE')" style="color: var(--eletra-orange);">Aditivos (Despesas)</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-moni">
+                <div class="module-header" onclick="toggleModule('mod-moni')">
+                    <span><i class="fa-solid fa-tower-broadcast main-icon"></i> MONITORAMENTO</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Monitor', 'MONITORAMENTO')">Monitor</div>
+                    <div class="sub-item" onclick="loadPage('Ocorrências', 'MONITORAMENTO')">Ocorrências</div>
+                    <div class="sub-item" onclick="loadPage('Diário de bordo', 'MONITORAMENTO')">Diário de bordo</div>
+                    <div class="sub-item" onclick="loadPage('Gestão de Canhotos', 'MONITORAMENTO')">Gestão de Canhotos</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-fin">
+                <div class="module-header" onclick="toggleModule('mod-fin')">
+                    <span><i class="fa-solid fa-file-invoice-dollar main-icon"></i> FINANCEIRO</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Consolidação', 'FINANCEIRO')">Consolidação (Alçada)</div>
+                    <div class="sub-item" onclick="loadPage('Conta Corrente Transp.', 'FINANCEIRO')">Conta Corrente Transp.</div>
+                    <div class="sub-item" onclick="loadPage('Auditoria de Frete', 'FINANCEIRO')">Auditoria de Frete</div>
+                    <div class="sub-item" onclick="loadPage('Faturas', 'FINANCEIRO')">Faturas</div>
                 </div>
             </div>
 
@@ -46,7 +92,20 @@
                     <span><i class="fa-solid fa-users-gear main-icon"></i> USUÁRIOS</span><i class="fa-solid fa-chevron-down fa-xs"></i>
                 </div>
                 <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Próprio', 'USUÁRIOS')">Próprio</div>
+                    <div class="sub-item" onclick="loadPage('Terceiro', 'USUÁRIOS')">Terceiro</div>
                     <div class="sub-item" onclick="loadPage('Perfis e Permissões', 'USUÁRIOS')">Perfis e Permissões</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-rel">
+                <div class="module-header" onclick="toggleModule('mod-rel')">
+                    <span><i class="fa-solid fa-chart-line main-icon"></i> RELATÓRIOS</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Performance (OTIF)', 'RELATÓRIOS')">Performance (OTIF)</div>
+                    <div class="sub-item" onclick="loadPage('Custo por Tonelada', 'RELATÓRIOS')">Custo por Tonelada</div>
+                    <div class="sub-item" onclick="loadPage('Ocupação de Frota', 'RELATÓRIOS')">Ocupação de Frota</div>
                 </div>
             </div>
 
@@ -55,7 +114,10 @@
                     <span><i class="fa-solid fa-gears main-icon"></i> MISCELÂNEA</span><i class="fa-solid fa-chevron-down fa-xs"></i>
                 </div>
                 <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Templates', 'MISCELÂNEA')">Templates</div>
                     <div class="sub-item" onclick="loadPage('Logs do Sistema', 'MISCELÂNEA')">Logs do Sistema</div>
+                    <div class="sub-item" onclick="loadPage('Configurações de API', 'MISCELÂNEA')">Configurações de API</div>
+                    <div class=\"sub-item\" onclick=\"clearData()\">Limpar Dados (Dev)</div>
                 </div>
             </div>
         </nav>
