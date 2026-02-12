@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EletraLog TMS | Gestão Logística</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="TMS_ELETRALOG_FINAL_style.css">
+</head>
+<body>
+
+    <aside id="sidebar">
+        <div class="logo-area" onclick="goHome()">
+            <h1>Eletra<span>Log</span></h1>
+        </div>
+        
+        <div style="padding: 10px 20px; font-size: 0.75rem; color: #777; border-bottom: 1px solid var(--border-color);">
+            <button onclick="doLogout()" style="background:none; border:1px solid #333; color:#FF3131; cursor:pointer; padding:5px 10px; width:100%; border-radius:4px; font-weight:bold;">
+                <i class="fa-solid fa-power-off"></i> SAIR / LOGOUT
+            </button>
+        </div>
+        
+        <nav class="nav-container">
+            <div class="module-group" id="mod-cad">
+                <div class="module-header" onclick="toggleModule('mod-cad')">
+                    <span><i class="fa-solid fa-database main-icon"></i> CADASTROS</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Equipamento', 'CADASTROS')">Equipamento</div>
+                    <div class="sub-item" onclick="loadPage('Transportadora', 'CADASTROS')">Transportadora</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-trans">
+                <div class="module-header" onclick="toggleModule('mod-trans')">
+                    <span><i class="fa-solid fa-truck-fast main-icon"></i> TRANSPORTE</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Agendamentos', 'TRANSPORTE')">Agendamentos</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-user">
+                <div class="module-header" onclick="toggleModule('mod-user')">
+                    <span><i class="fa-solid fa-users-gear main-icon"></i> USUÁRIOS</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Perfis e Permissões', 'USUÁRIOS')">Perfis e Permissões</div>
+                </div>
+            </div>
+
+            <div class="module-group" id="mod-misc">
+                <div class="module-header" onclick="toggleModule('mod-misc')">
+                    <span><i class="fa-solid fa-gears main-icon"></i> MISCELÂNEA</span><i class="fa-solid fa-chevron-down fa-xs"></i>
+                </div>
+                <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Logs do Sistema', 'MISCELÂNEA')">Logs do Sistema</div>
+                </div>
+            </div>
+        </nav>
+    </aside>
+
+    <main id="main-content">
+        <header class="topbar">
+            <div>
+                <h2 id="view-title">Dashboard Principal</h2>
+                <div class="breadcrumb" id="view-breadcrumb">Sistemas Eletra Energy</div>
+            </div>
+            <div style="text-align: right; color: white;">
+                <div style="font-weight: 700;" id="user-display">Carregando...</div>
+                <div style="font-size: 0.7rem; color: var(--eletra-orange); text-transform: uppercase;">Unidade: Matriz</div>
+            </div>
+        </header>
+
+        <section class="workspace" id="workspace">
+            </section>
+    </main>
+
+    <div id="notification-bar"></div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+    <script>
+        // CONFIGURAÇÃO DO SEU PROJETO TMS-ELETRALOG
+        const firebaseConfig = {
+            apiKey: "AIzaSyAQZ4Y9iGfcPeaf6NFZZX3gALakU_xGGjU",
+            authDomain: "tms-eletralog.firebaseapp.com",
+            projectId: "tms-eletralog",
+            storageBucket: "tms-eletralog.firebasestorage.app",
+            messagingSenderId: "991352143892",
+            appId: "1:991352143892:web:f78ca71eae64756ed22701",
+            measurementId: "G-L9S0C2ZQ5E"
+        };
+        
+        // Inicializa Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+    </script>
+
+    <script src="TMS_ELETRALOG_FINAL_js.js"></script>
+</body>
+</html>

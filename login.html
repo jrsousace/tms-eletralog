@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - EletraLog TMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0B0E11; color: #D1D1D1; font-family: 'Inter', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: #1A1D21; padding: 40px; border-radius: 8px; border: 1px solid #2D3238; width: 350px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #00D4FF; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 1px; }
+        h1 span { color: #FF8200; font-weight: 300; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; background: #0B0E11; border: 1px solid #2D3238; color: white; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #00D4FF; border: none; color: #0B0E11; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #00b8dd; }
+        .error { color: #FF3131; font-size: 0.8rem; margin-top: 10px; display: none; }
+        .hint { margin-top: 20px; font-size: 0.7rem; color: #555; }
+        #loading { display: none; color: #00D4FF; margin-top: 10px; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>Eletra<span>Log</span></h1>
+        <input type="text" id="user" placeholder="Usuário">
+        <input type="password" id="pass" placeholder="Senha">
+        <button id="btn-entrar" onclick="performLogin()">ENTRAR</button>
+        <div id="loading">Conectando ao servidor...</div>
+        <div id="error-msg" class="error">Usuário ou senha inválidos</div>
+        <div class="hint">Primeiro acesso:<br>User: <strong>admin</strong> | Senha: <strong>admin</strong></div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        // CONFIGURAÇÃO TMS-ELETRALOG
+        const firebaseConfig = {
+            apiKey: "AIzaSyAQZ4Y9iGfcPeaf6NFZZX3gALakU_xGGjU",
+            authDomain: "tms-eletralog.firebaseapp.com",
+            projectId: "tms-eletralog",
+            storageBucket: "tms-eletralog.firebasestorage.app",
+            messagingSenderId: "991352143892",
+            appId: "1:991352143892:web:f78ca71eae64756ed22701",
+            measurementId: "G-L9S0C2ZQ5E"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        async function performLogin() {
+            const u = document.getElementById('user').value.trim();
+            const p = document.getElementById('pass').value.trim();
+            const btn = document.getElementById('btn-entrar');
+            const load = document.getElementById('loading');
+            const err = document.getElementById('error-msg');
+
+            if(!u || !p) return;
+
+            // Bloqueia botão e mostra loading
+            btn.disabled = true;
+            load.style.display = 'block';
+            err.style.display = 'none';
+
+            try {
+                // 1. Busca usuários no Banco Online
+                const snapshot = await db.collection('usuarios').get();
+                let users = snapshot.docs.map(doc => doc.data());
+
+                // 2. Auto-Bootstrap: Se banco vazio, cria admin automaticamente na nuvem
+                if (users.length === 0) {
+                    const masterUser = { id: 'master_01', name: 'Administrador Master', user: 'admin', pass: 'admin', role: 'MASTER', matricula: '001' };
+                    await db.collection('usuarios').add(masterUser);
+                    users = [masterUser];
+                }
+
+                // 3. Verifica credenciais
+                const found = users.find(user => user.user === u && user.pass === p);
+
+                if (found) {
+                    // Guarda sessão localmente para saber quem está logado ao mudar de página
+                    localStorage.setItem('eletra_session', JSON.stringify(found));
+                    // Vai para o painel principal
+                    window.location.href = 'index.html'; 
+                } else {
+                    err.style.display = 'block';
+                    btn.disabled = false;
+                    load.style.display = 'none';
+                }
+            } catch (error) {
+                console.error(error);
+                alert("Erro ao conectar com o banco de dados. Verifique sua conexão.");
+                btn.disabled = false;
+                load.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
