@@ -56,7 +56,6 @@
 
             if(!u || !p) return;
 
-            // Bloqueia botão e mostra loading
             btn.disabled = true;
             load.style.display = 'block';
             err.style.display = 'none';
@@ -66,7 +65,8 @@
                 const snapshot = await db.collection('usuarios').get();
                 let users = snapshot.docs.map(doc => doc.data());
 
-                // 2. Auto-Bootstrap: Se banco vazio, cria admin automaticamente na nuvem
+                // 2. Auto-Bootstrap: SE NÃO EXISTIR NINGUÉM, CRIA O ADMIN.
+                // PARA MUDAR A SENHA DE UM ADMIN JÁ CRIADO, EDITE DIRETAMENTE NO FIREBASE CONSOLE.
                 if (users.length === 0) {
                     const masterUser = { id: 'master_01', name: 'Administrador Master', user: 'admin', pass: 'admin', role: 'MASTER', matricula: '001' };
                     await db.collection('usuarios').add(masterUser);
@@ -77,9 +77,7 @@
                 const found = users.find(user => user.user === u && user.pass === p);
 
                 if (found) {
-                    // Guarda sessão localmente para saber quem está logado ao mudar de página
                     localStorage.setItem('eletra_session', JSON.stringify(found));
-                    // Vai para o painel principal
                     window.location.href = 'index.html'; 
                 } else {
                     err.style.display = 'block';

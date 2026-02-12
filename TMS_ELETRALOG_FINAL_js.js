@@ -40,7 +40,7 @@ const StorageManager = {
     // Busca dados da coleção 'logs'
     getLogs: async function() {
         try {
-            const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(50).get();
+            const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(100).get();
             return snapshot.docs.map(doc => doc.data());
         } catch (e) { return []; }
     },
@@ -86,12 +86,8 @@ const StorageManager = {
     },
 
     saveUser: async function(newUser) {
-        const checkLogin = await db.collection('usuarios').where('user', '==', newUser.user).get();
-        if (!checkLogin.empty) return { success: false, msg: "Login já existe." };
-        
-        const checkMat = await db.collection('usuarios').where('matricula', '==', newUser.matricula).get();
-        if (!checkMat.empty) return { success: false, msg: "Matrícula já existe." };
-
+        const check = await db.collection('usuarios').where('user', '==', newUser.user).get();
+        if (!check.empty) return { success: false, msg: "Login já existe." };
         await db.collection('usuarios').add(newUser);
         return { success: true };
     },
@@ -173,7 +169,71 @@ function loadPage(page, module) {
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
 }
 
-/* --- AGENDAMENTOS --- */
+/* --- MÓDULO TRANSPORTADORA (RESTAURADO) --- */
+function renderTransportadora(container) {
+    container.innerHTML = `
+        <div class="props-container">
+            <div id="status-card" class="status-neon active">ATIVO</div>
+            <div class="props-tabs">
+                <button class="tab-btn active" onclick="switchTab('geral')">Geral / Seguros</button>
+                <button class="tab-btn" onclick="switchTab('operacional')">Operacional</button>
+            </div>
+            
+            <div id="geral" class="tab-content active">
+                <div class="form-row"><label>CNPJ:</label><input type="text" value="12.345.678/0001-90"></div>
+                <div class="form-row"><label>Razão Social:</label><input type="text" value="TRANS-ELETRA LOGÍSTICA S.A."></div>
+                <div class="form-row"><label>Nome Fantasia:</label><input type="text" value="TRANS-ELETRA LOGÍSTICA S.A."></div>
+                <fieldset class="prop-group">
+                    <legend>ANTT</legend>
+                    <div class="form-row"><label>RNTRC:</label><input type="text" style="width:40%"><label style="width:60px; text-align:right">Validade:</label><input type="date" id="val-rntrc" value="2026-12-31" onchange="validateDates()"></div>
+                </fieldset>
+                <fieldset class="prop-group">
+                    <legend>APÓLICES DE SEGURO</legend>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RCTR-C:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rctrc" value="2026-08-15" onchange="validateDates()"></div>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-DC:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rcdc" value="2026-01-20" onchange="validateDates()"></div>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-V:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rcv" value="2027-05-10" onchange="validateDates()"></div>
+                </fieldset>
+            </div>
+
+            <div id="operacional" class="tab-content">
+                <div class="form-row"><label>% Frota Própria:</label><input type="text" placeholder="Ex: 60%"></div>
+                <div class="form-row"><label>Idade Média:</label><input type="text" placeholder="Anos"></div>
+                <fieldset class="prop-group"><legend>ZONAS</legend><div class="marking-group">${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn selected" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}</div></fieldset>
+            </div>
+
+            <div class="props-footer">
+                <button class="mark-btn action apply" onclick="notify('Cadastro Atualizado')">CADASTRAR</button>
+                <button class="mark-btn action" id="btn-editar" onclick="handleEdit()">EDITAR</button>
+                <button class="mark-btn action" onclick="goHome()">SAIR</button>
+            </div>
+        </div>`;
+    
+    setTimeout(validateDates, 100);
+}
+
+function validateDates() {
+    const sysDate = new Date(SYSTEM_DATE_STR);
+    const ids = ['val-rntrc', 'val-rctrc', 'val-rcdc', 'val-rcv'];
+    let expired = false;
+    
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (new Date(el.value) < sysDate) { el.classList.add('input-error'); expired = true; }
+        else { el.classList.remove('input-error'); }
+    });
+    
+    const status = document.getElementById('status-card');
+    if (status) {
+        if (expired) { 
+            status.innerText = "INATIVO"; status.className = "status-neon inactive"; 
+            notify("⚠️ ALERTA: Documentação Vencida!", "error"); 
+        }
+        else { status.innerText = "ATIVO"; status.className = "status-neon active"; }
+    }
+}
+
+/* --- AGENDAMENTOS (LÓGICA ASSÍNCRONA) --- */
 let selectedSlots = [];
 
 function renderAgendamentos(container) {
@@ -425,7 +485,7 @@ async function deleteUser(id) {
     else { notify(res.msg, "error"); }
 }
 
-/* --- LOGS --- */
+/* --- LOGS E IMPRESSÃO (ASSÍNCRONO) --- */
 function toggleLogPanel() { const p=document.getElementById('log-panel'); p.style.display=(p.style.display==='none')?'block':'none'; }
 
 async function updateLogPanel(date, location) {
@@ -509,5 +569,4 @@ function notify(msg, type='success') {
 }
 function handleEdit() { notify("Modo edição ativado."); }
 function showBookingInfo(u,p,s,t) { notify(`🔒 ${u} | PO: ${p} | Sol: ${s}`, "info"); }
-function renderTransportadora(c) { c.innerHTML = '<div class="card"><h3>Transportadora</h3><p>Módulo Transportadora (versão anterior).</p></div>'; }
 function clearData() { StorageManager.clearData(); }
