@@ -264,6 +264,23 @@ function renderAgendamentos(container) {
                             <div class="form-row"><label>CNPJ Transp.:</label><input type="text" id="input-cnpj-transp"></div>
                             <div class="form-row"><label style="color:var(--eletra-aqua)">Pedido Frete*:</label><input type="text" id="input-po-frete"></div>
                             <div class="form-row"><label>CTRC:</label><input type="text" id="input-ctrc"></div>
+                            <div class="form-row"><label>Tipo Veículo:</label>
+                                <select id="input-tipo-veiculo">
+                                    <option value="">Selecione...</option>
+                                    <option value="Moto">Moto</option>
+                                    <option value="Passeio">Passeio</option>
+                                    <option value="Caminhonete">Caminhonete</option>
+                                    <option value="Pickup">Pickup</option>
+                                    <option value="Utilitário">Utilitário</option>
+                                    <option value="VUC">VUC</option>
+                                    <option value="3/4">3/4</option>
+                                    <option value="Toco">Toco</option>
+                                    <option value="Truck">Truck</option>
+                                    <option value="Carreta">Carreta</option>
+                                    <option value="Container">Container</option>
+                                </select>
+                            </div>
+                            <div class="form-row"><label>Observações:</label><input type="text" id="input-obs" placeholder="Ex: Descarga lateral..."></div>
                         </div>
                     </div>
                 </fieldset>
@@ -303,7 +320,7 @@ async function updateInboundSlots() {
     const occupiedSlots = allAppts.filter(a => a.date === date && a.location === location);
 
     let html = '';
-    for (let h = 8; h < 18; h++) {
+    for (let h = 0; h < 24; h++) {
         for (let m = 0; m < 60; m += 10) {
             let time = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
             const booking = occupiedSlots.find(b => b.time === time);
