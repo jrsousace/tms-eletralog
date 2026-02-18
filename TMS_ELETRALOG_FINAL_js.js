@@ -336,7 +336,7 @@ async function updateInboundSlots() {
                     tooltip = `Meu: PO ${booking.details.poMat}`;
                 } else {
                     className = 'occupied-by-others';
-                    clickAction = `showBookingInfo('${booking.userName}', '${booking.details.poMat}', '${booking.details.solicitante}', '${booking.timestamp}')`;
+                    clickAction = `showBookingInfo('${booking.userName}', '${booking.details.poMat}', '${booking.details.comprador}', '${booking.timestamp}')`;
                     tooltip = `Ocupado por: ${booking.userName}`;
                 }
             } else {
@@ -364,8 +364,7 @@ function toggleSlot(el, time) {
 
 async function saveBooking() {
     const date = document.getElementById('in-date').value;
-    const location = document.getElementById('loc').value;
-    
+    const location = document.getElementById('loc').value;    
     const poMat = document.getElementById('input-po-mat').value.trim();
     const nf = document.getElementById('input-nf').value.trim();
     const fornecedor = document.getElementById('input-fornecedor').value.trim();
@@ -376,6 +375,8 @@ async function saveBooking() {
     const cnpjTransp = document.getElementById('input-cnpj-transp').value.trim();
     const poFrete = document.getElementById('input-po-frete').value.trim();
     const ctrc = document.getElementById('input-ctrc').value.trim();
+    const tipoVeiculo = document.getElementById('input-tipo-veiculo').value; 
+    const obsAgenda = document.getElementById('input-obs').value.trim();
 
     if (selectedSlots.length === 0) { notify("Selecione um horário.", "error"); return; }
     if (!poMat || !nf || !comprador || !poFrete) { notify("Preencha campos obrigatórios (*).", "error"); return; }
@@ -391,7 +392,7 @@ async function saveBooking() {
         userId: CURRENT_USER.id,
         userName: CURRENT_USER.name,
         timestamp: new Date().toISOString(),
-        details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc }
+        details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obsAgenda }
     }));
 
     await StorageManager.saveAppointments(newBookings);
