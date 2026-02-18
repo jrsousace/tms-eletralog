@@ -566,7 +566,11 @@ async function printDailySchedule() {
     
     const generateRows = (list) => {
         if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Vazio</td></tr>';
-        return list.map(a => `<tr><td>${a.time}</td><td>${a.details.transp||'-'}</td><td>${a.details.ctrc||'-'}</td><td>${a.details.solicitante||'-'}</td><td>${a.details.comprador||'-'}</td><td>${a.userName}</td><td>PO:${a.details.poMat}</td></tr>`).join('');
+        return list.map(a => {
+            // Concatena a transportadora com o tipo de veículo
+            const transpInfo = a.details.tipoVeiculo ? `${a.details.transp||'-'} (${a.details.tipoVeiculo})` : (a.details.transp||'-');
+            return `<tr><td>${a.time}</td><td>${transpInfo}</td><td>${a.details.ctrc||'-'}</td><td>${a.details.solicitante||'-'}</td><td>${a.details.comprador||'-'}</td><td>${a.userName}</td><td>PO:${a.details.poMat}</td></tr>`
+        }).join('');
     };
 
     const win = window.open('', '', 'height=800,width=950');
@@ -586,5 +590,17 @@ function notify(msg, type='success') {
     setTimeout(() => toast.remove(), 4000);
 }
 function handleEdit() { notify("Modo edição ativado."); }
-function showBookingInfo(u,p,s,t) { notify(`🔒 ${u} | PO: ${p} | Sol: ${s}`, "info"); }
+
+function showBookingInfo(u,p,s,t) { 
+    // Busca direto do banco para pegar os dados completos, incluindo as novidades
+    StorageManager.getAppointments().then(appts => {
+        const appt = appts.find(a => a.timestamp === t);
+        if(appt) {
+            let msg = `🔒 ${appt.userName} | PO: ${appt.details.poMat} | NF: ${appt.details.nf} | Comp: ${appt.details.comprador || '?'}`;
+            if(appt.details.tipoVeiculo) msg += ` | Veíc: ${appt.details.tipoVeiculo}`;
+            if(appt.details.obs) msg += ` | Obs: ${appt.details.obs}`;
+            notify(msg, "info");
+        }
+    });
+}
 function clearData() { StorageManager.clearData(); }
