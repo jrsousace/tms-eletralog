@@ -1,61 +1,53 @@
 # 🚚 EletraLog TMS - Gestão Logística
 
-**EletraLog TMS** é um protótipo de Sistema de Gerenciamento de Transporte (TMS) corporativo desenvolvido em nuvem. O objetivo principal desta ferramenta é digitalizar, organizar e auditar o fluxo logístico de pátio, começando pelo módulo de **Agendamento Inbound** (Recebimento).
+O **EletraLog TMS** é uma aplicação web responsiva desenhada para a gestão de alta performance de operações logísticas, com foco em Inbound, Outbound, gestão de pátio e auditoria de fretes. A arquitetura foi construída para eliminar o uso de planilhas, oferecendo controlo em tempo real através de uma Torre de Controlo (Control Tower) e regras de negócio estritas de Gerenciamento de Risco (GR) e Compliance Logístico.
 
-O sistema é multiusuário, responsivo e sincronizado em tempo real, garantindo que a equipe de logística, portaria e parceiros tenham uma visão única e atualizada da operação.
+## 🚀 Estado Atual do Projeto
 
----
+O sistema encontra-se numa fase avançada de MVP (Minimum Viable Product), com os seguintes módulos nucleares 100% funcionais e integrados numa base de dados NoSQL em nuvem.
 
-## 🚀 Funcionalidades Implementadas (MVP - V1)
+### 1. Autenticação e Perfis de Acesso (RBAC)
+* **Login Seguro:** Interface de entrada (`login.html`) validada com base de dados.
+* **Níveis de Permissão:** Controlo de acessos baseado em `MASTER` (Diretoria), `GESTOR`, `USER` (Operador) e `TERCEIRO` (Leitura para portarias/transportadoras).
+* **Auto-Bootstrap:** Criação automática do utilizador Master na primeira inicialização da base de dados.
 
-### 1. Agendamento Inbound (Check-in de Doca e Portaria)
-* **Grade de Horários 24h:** Visualização e reserva de slots de 10 em 10 minutos, cobrindo o dia inteiro (00:00 às 23:50).
-* **Prevenção de Conflitos:** O sistema valida em tempo real na nuvem se o horário já foi ocupado por outro usuário, impedindo dupla marcação.
-* **Detalhes da Carga:** Captura de dados cruciais como Pedido de Compra (PO), NF, Fornecedor, Solicitante, Comprador e CTRC.
-* **Classificação de Frota:** Segmentação obrigatória por tipo de veículo (Moto, Passeio, Utilitário, VUC, 3/4, Toco, Truck, Carreta, Container).
-* **Observações:** Campo de texto livre para direcionamentos operacionais (ex: "Descarga lateral").
+### 2. Módulo de Cadastros (Core Data)
+Gestão de entidades com CRUD completo e lógicas de validação avançadas:
+* **Transportadoras:** Gestão de parceiros, vigência de ANTT (RNTRC) e auditoria visual de vencimento de apólices de seguros (RCTR-C, RC-DC, RC-V).
+* **Equipamentos (Frota):** Registo de veículos com cálculo automático de capacidade (Tara vs PBT), sugestão de tara por categoria, e validação obrigatória de reboques duplos para carretas.
+* **Clientes (Matriz Logística):** Gestão multilocais (Pontos de Entrega pelo "Apelido do Local"). Integração direta com **ViaCEP** para preenchimento automático de endereços. Incorpora matriz de restrições de entrega (tipos de veículos aceites, sobreposição de carga, dimensões e janelas de horário).
+* **Motoristas:** Foco em GR (Gerenciamento de Risco). Alerta automático de CNH vencida e bloqueio visual de motoristas reprovados na gerenciadora (Status: Liberado, Pendente, Bloqueado).
 
-### 2. Controle de Acesso (RBAC) e Usuários
-O sistema conta com uma matriz de permissões rígida baseada em papéis (Roles):
-* **MASTER (Diretoria):** Acesso total, pode criar/excluir qualquer usuário e cancelar qualquer agendamento.
-* **GESTOR (Gestor Logística):** Pode gerenciar usuários e cancelar agendamentos.
-* **USER (Analista/Operador):** Pode criar agendamentos e cancelar apenas os seus próprios.
-* **TERCEIRO (Transportadora/Portaria):** Acesso **Somente Leitura**. Pode visualizar a grade, mas os campos de edição são bloqueados.
-* *Nota: O campo CPF é opcional no cadastro, visando agilidade interna.*
+### 3. Agendamentos (Inbound)
+* Gestão visual de ocupação de docas e portaria em slots de 10 minutos.
+* Bloqueio de agendamento duplo (conflito de horários).
+* Agrupamento por PO (Pedido de Compra) e Nota Fiscal.
 
-### 3. Log e Auditoria
-* **Histórico em Tempo Real:** Todo agendamento e cancelamento gera um log automático com carimbo de data/hora (Timestamp) e o nome do usuário que executou a ação.
+### 4. Monitoramento (Torre de Controlo / Control Tower)
+* **Dashboard Real-Time:** Contadores de camiões "Agendados", "No Pátio", "Finalizados" e "Ocorrências".
+* **Agrupamento Inteligente (Batch):** Slots de tempo do mesmo camião são consolidados numa única linha contínua (ex: 10:00 às 10:50) para visualização fluida.
+* **Atraso Automático:** O sistema compara a janela final de agendamento com a hora do relógio local; veículos que ultrapassam a hora caem para o status de "ATRASADO" automaticamente.
+* **Apontamentos One-Click:** Atualização ultrarrápida (Chegada, Descarga, Saída) diretamente na tabela.
+* **Gestão de Anomalias:** Modal de exceções que obriga o preenchimento da **Causa Raiz** (ex: *No Show*, *Falta de EPI*, *Divergência de PO*) antes de gravar o status de erro, garantindo a fidelidade dos relatórios operacionais.
 
-### 4. Relatórios e Impressão
-* Geração de espelho diário de agendamentos formatado para impressão, separando automaticamente os veículos alocados na **Doca** e na **Portaria**.
+### 5. Responsividade (Mobile-First UI)
+* Interface escura e moderna (`bg-petroleo`, `eletra-aqua`, `eletra-orange`) otimizada para redução da fadiga visual.
+* Totalmente responsivo (`max-width: 768px`), transformando-se numa Web App nativa com menu lateral sanduíche deslizante, ideal para operadores de empilhadores, porteiros e conferentes no pátio.
 
----
+## 🛠️ Stack Tecnológica
 
-## 🛠️ Tecnologias Utilizadas
+* **Front-end:** HTML5, CSS3, Vanilla JavaScript (ES6+).
+* **Base de Dados:** Firebase Firestore (NoSQL).
+* **Autenticação:** Firebase Auth / Lógica customizada baseada em Hash na coleção `usuarios`.
+* **Ícones e Tipografia:** FontAwesome 6 e Google Fonts (Inter).
 
-* **Frontend:** HTML5, CSS3 (Custom Properties, Flexbox/Grid) e JavaScript (ES6+, Async/Await).
-* **Backend / Database:** [Google Firebase Firestore](https://firebase.google.com/) (Banco de dados NoSQL em tempo real).
-* **Autenticação / Sessão:** Gerenciamento híbrido via Firestore e LocalStorage.
-* **Hospedagem:** GitHub Pages (Servidor estático via CDN).
-* **Ícones:** FontAwesome.
+## ⚙️ Instalação e Execução
 
----
+Como a aplicação é integralmente baseada em tecnologias Web e Firebase (Serverless), a execução local é extremamente simples.
 
-## 💻 Como Acessar e Testar
+1. Clone este repositório.
+2. Não há necessidade de instalar `node_modules` ou compilar via Webpack.
+3. Utilize uma extensão como **Live Server** (no VS Code) ou sirva os ficheiros localmente (`python -m http.server 8000`).
+4. Abra o `login.html` no browser.
 
-O projeto está hospedado e funcional.
-Para utilização é necessário contato com desenvolvedor.
-> **Nota:** Por ser uma aplicação web progressiva (PWA Ready), o site pode ser "Instalado" como um aplicativo no celular acessando as opções do navegador (Chrome/Safari) e selecionando "Adicionar à Tela Inicial".
-
-## 🚧 Próximos Passos (Roadmap)
-
-Os seguintes módulos já constam na interface gráfica e estão mapeados para as próximas Sprints (V2):
-
-- [ ] **Módulo Outbound:** Agendamento e expedição de cargas.
-- [ ] **Módulo de Transferência:** Gestão de movimentação entre CDs.
-- [ ] **Registros de Insucessos:** Mapeamento de no-shows e devoluções.
-- [ ] **Dashboards (Relatórios):** Gráficos de Performance (OTIF), Custo por Tonelada e Ocupação de Frota.
-- [ ] **Segurança Avançada:** Implementação de Firebase Security Rules rígidas baseadas em UID.
-
----
-*Desenvolvido internamente para otimização de processos logísticos corporativos.*
+*Nota: As chaves de configuração do Firebase Cloud Firestore estão inseridas na tag `<script>` do ficheiro `index.html`. Para ambientes de Produção, sugere-se a proteção das chaves de API nas regras de segurança do próprio Firebase Console.*
