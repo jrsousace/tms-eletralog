@@ -766,7 +766,6 @@ async function handleSaveCliente() {
         contatoNome: document.getElementById('c-contato-nome').value.trim(),
         contatoTel: document.getElementById('c-contato-tel').value.trim(),
         contatoEmail: document.getElementById('c-contato-email').value.trim(),
-        
         // NOVOS DADOS DA MATRIZ
         horarioRecebimento: document.getElementById('c-horario').value.trim(),
         metodoAgendamento: document.getElementById('c-metodo-agendamento').value,
@@ -795,7 +794,6 @@ async function handleSaveCliente() {
 async function handleEditCliente(id) {
     const c = await StorageManager.getClienteById(id);
     if (!c) return;
-
     document.getElementById('c-id-doc').value = c.id_doc;
     document.getElementById('c-doc').value = c.documento;
     document.getElementById('c-ie').value = c.ie || '';
@@ -811,14 +809,12 @@ async function handleEditCliente(id) {
     document.getElementById('c-contato-nome').value = c.contatoNome || '';
     document.getElementById('c-contato-tel').value = c.contatoTel || '';
     document.getElementById('c-contato-email').value = c.contatoEmail || '';
-
     // CARREGA NOVOS DADOS DA MATRIZ
     document.getElementById('c-horario').value = c.horarioRecebimento || '';
     document.getElementById('c-metodo-agendamento').value = c.metodoAgendamento || '';
     document.getElementById('c-sobreposicao').value = c.sobreposicao || 'SIM';
     document.getElementById('c-dimensoes').value = c.dimensoes || '';
     document.getElementById('c-obs-logistica').value = c.obsLogistica || '';
-
     // REACENDE OS BOTÕES DE VEÍCULOS
     document.querySelectorAll('.veic-btn').forEach(btn => {
         if (c.veiculosPermitidos && c.veiculosPermitidos.includes(btn.innerText)) {
