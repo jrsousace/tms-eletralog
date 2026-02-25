@@ -125,13 +125,18 @@
 
     <main id="main-content">
         <header class="topbar">
-            <div>
-                <h2 id="view-title">Dashboard Principal</h2>
-                <div class="breadcrumb" id="view-breadcrumb">Sistemas Eletra Energy</div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button id="mobile-menu-btn" onclick="toggleSidebar()" style="background: none; border: none; color: var(--eletra-aqua); font-size: 1.5rem; cursor: pointer; display: none;">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div>
+                    <h2 id="view-title">Dashboard Principal</h2>
+                    <div class="breadcrumb" id="view-breadcrumb">Sistemas Eletra Energy</div>
+                </div>
             </div>
             <div style="text-align: right; color: white;">
-                <div style="font-weight: 700;" id="user-display">Carregando...</div>
-                <div style="font-size: 0.7rem; color: var(--eletra-orange); text-transform: uppercase;">Unidade: Matriz</div>
+                <div style="font-weight: 700; font-size: 0.85rem;" id="user-display">Carregando...</div>
+                <div style="font-size: 0.65rem; color: var(--eletra-orange); text-transform: uppercase;">Unidade: Matriz</div>
             </div>
         </header>
 
