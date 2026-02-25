@@ -412,6 +412,7 @@ async function renderEquipamento(container) {
 
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando frota...</div>';
     
+    // Busca apenas a frota
     const equips = await StorageManager.getEquipamentos();
     
     let rows = equips.map(e => `
@@ -420,11 +421,12 @@ async function renderEquipamento(container) {
                 <span style="color:var(--eletra-aqua); font-weight:bold; font-size:0.85rem;">${e.placa}</span>
                 ${e.placasReboque ? '<br><span style="font-size:0.7rem; color:#aaa;">Reb: '+e.placasReboque+'</span>' : ''}
             </td>
-            <td>${e.tipo}<br><span style="font-size:0.7rem;">${e.modelo || ''}</span></td>
-            <td>${e.capacidade} kg<br><span style="font-size:0.7rem; color:#aaa;">PBT: ${e.pbt} - Tara: ${e.tara}</span></td>
+            <td>${e.tipo}<br><span style="font-size:0.7rem;">${e.carroceria || ''} | ${e.modelo || ''}</span></td>
+            <td>${e.capacidade} kg<br><span style="font-size:0.7rem; color:#aaa;">PBT: ${e.pbt} - Tara: ${e.tara}</span><br><span style="font-size:0.7rem; color:#00D4FF;">Vol: ${e.cubagem || 0} m³</span></td>
             <td>
                 <span style="font-size:0.75rem;">${e.proprietario || '-'}</span><br>
-                <span style="font-size:0.65rem; color:#888;">${e.docProprietario || ''}</span>
+                <span style="font-size:0.65rem; color:#888;">Doc: ${e.docProprietario || ''}</span><br>
+                <span style="font-size:0.65rem; color:#FF8200;">RNTRC: ${e.rntrcProp || '-'}</span>
             </td>
             <td style="text-align:right;">
                 <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditEquipamento('${e.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
@@ -563,8 +565,7 @@ function checkReboqueRequirement() {
 function suggestTara() {
     const tipo = document.getElementById('e-tipo').value;
     const fieldTara = document.getElementById('e-tara');
-    if(fieldTara.value) return; 
-
+    if(fieldTara.value) return;
     const taras = {
         'Pick Up': 1100,
         'Utilitário':2000,
@@ -595,6 +596,7 @@ async function handleSaveEquipamento() {
         return; 
     }
 
+    // Validação Específica para Carreta
     if (tipo === 'Carreta' && !placasReb) {
         notify("Para CARRETA, é obrigatório informar as placas dos reboques.", "error");
         document.getElementById('e-placas-reboque').focus();
@@ -659,11 +661,13 @@ async function handleEditEquipamento(id) {
     document.getElementById('eq-status-card').innerText = "EM EDIÇÃO";
     document.getElementById('eq-status-card').className = "status-neon active";
     document.getElementById('btn-save-eq').innerText = "ATUALIZAR DADOS";
+    // Força a troca de aba
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('eq-geral').classList.add('active');
     document.getElementById('tab-eq-geral').classList.add('active');
-    checkReboqueRequirement();
+
+    checkReboqueRequirement(); // Ajusta os placeholders
     notify("Editando veículo " + e.placa, "info");
 }
 //CRUD Deletar equipamento
