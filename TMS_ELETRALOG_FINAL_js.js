@@ -412,7 +412,6 @@ async function renderEquipamento(container) {
 
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando frota...</div>';
     
-    // Busca apenas a frota (não precisamos mais cruzar com transportadoras para o dono)
     const equips = await StorageManager.getEquipamentos();
     
     let rows = equips.map(e => `
@@ -548,7 +547,7 @@ function calcCapacidade() {
 // Validação visual de carreta
 function checkReboqueRequirement() {
     const tipo = document.getElementById('e-tipo').value;
-    const lblReb = document.querySelector('label[for="e-placas-reboque"]'); // Busca o label
+    const lblReb = document.querySelector('label[for="e-placas-reboque"]'); 
     const inputReb = document.getElementById('e-placas-reboque');
     
     if (tipo === 'Carreta') {
@@ -558,17 +557,18 @@ function checkReboqueRequirement() {
         if(lblReb) lblReb.style.color = '#aaa';
         inputReb.placeholder = "Opcional";
     }
-    suggestTara(); // Chama a sugestão de tara também
+    suggestTara(); 
 }
-
+//Sugerir Tara de veículos
 function suggestTara() {
     const tipo = document.getElementById('e-tipo').value;
     const fieldTara = document.getElementById('e-tara');
     if(fieldTara.value) return; 
 
-    // Médias de mercado para ajudar o preenchimento
     const taras = {
-        'VUC': 3000,
+        'Pick Up': 1100,
+        'Utilitário':2000,
+        'VUC': 2000,
         '3/4': 4000,
         'Toco': 6000,
         'Truck': 8500,
@@ -580,7 +580,7 @@ function suggestTara() {
         calcCapacidade();
     }
 }
-
+//Salvar equipamento
 async function handleSaveEquipamento() {
     const idDoc = document.getElementById('e-id-doc').value;
     const placa = document.getElementById('e-placa').value.trim();
@@ -595,7 +595,6 @@ async function handleSaveEquipamento() {
         return; 
     }
 
-    // Validação Específica para Carreta
     if (tipo === 'Carreta' && !placasReb) {
         notify("Para CARRETA, é obrigatório informar as placas dos reboques.", "error");
         document.getElementById('e-placas-reboque').focus();
@@ -606,19 +605,19 @@ async function handleSaveEquipamento() {
         placa: placa,
         placasReboque: placasReb,
         tipo: tipo,
-        carroceria: carroceria, // NOVO
+        carroceria: carroceria, 
         marca: document.getElementById('e-marca').value.trim(),
         modelo: document.getElementById('e-modelo').value.trim(),
         anoFab: document.getElementById('e-ano-fab').value.trim(),
         anoMod: document.getElementById('e-ano-mod').value.trim(),
         proprietario: prop,
         docProprietario: docProp,
-        renavam: document.getElementById('e-renavam').value.trim(), // NOVO
-        rntrcProp: document.getElementById('e-rntrc-prop').value.trim(), // NOVO
+        renavam: document.getElementById('e-renavam').value.trim(), 
+        rntrcProp: document.getElementById('e-rntrc-prop').value.trim(), 
         pbt: document.getElementById('e-pbt').value.trim(),
         tara: document.getElementById('e-tara').value.trim(),
         capacidade: document.getElementById('e-cap').value.trim(),
-        cubagem: document.getElementById('e-cubagem').value.trim(), // NOVO
+        cubagem: document.getElementById('e-cubagem').value.trim(), 
         user: CURRENT_USER.name,
         timestamp: new Date().toISOString()
     };
@@ -635,7 +634,7 @@ async function handleSaveEquipamento() {
         else { notify(res.msg, "error"); }
     }
 }
-
+// Editar equipamento CRUD
 async function handleEditEquipamento(id) {
     const e = await StorageManager.getEquipamentoById(id);
     if (!e) return;
@@ -656,21 +655,18 @@ async function handleEditEquipamento(id) {
     document.getElementById('e-pbt').value = e.pbt || '';
     document.getElementById('e-tara').value = e.tara || '';
     document.getElementById('e-cap').value = e.capacidade || '';
-document.getElementById('e-cubagem').value = e.cubagem || '';
+    document.getElementById('e-cubagem').value = e.cubagem || '';
     document.getElementById('eq-status-card').innerText = "EM EDIÇÃO";
     document.getElementById('eq-status-card').className = "status-neon active";
     document.getElementById('btn-save-eq').innerText = "ATUALIZAR DADOS";
-    
-    // Força a troca de aba
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('eq-geral').classList.add('active');
     document.getElementById('tab-eq-geral').classList.add('active');
-
-    checkReboqueRequirement(); // Ajusta os placeholders
+    checkReboqueRequirement();
     notify("Editando veículo " + e.placa, "info");
 }
-
+//CRUD Deletar equipamento
 async function handleDeleteEquipamento(id) {
     if(!confirm("Remover este veículo da base?")) return;
     await StorageManager.deleteEquipamento(id);
