@@ -1990,7 +1990,7 @@ async function renderMonitor(container) {
     let rows = Object.values(groupedAppts).map(g => {
         let status = g.status || 'AGENDADO';
         
-        // --- ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO ---
+        // --- ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO --- //
         if (status === 'AGENDADO') {
             if (filterDate < SYSTEM_DATE_STR) {
                 status = 'ATRASADO';
@@ -2003,7 +2003,7 @@ async function renderMonitor(container) {
 
         let statusColor = '#aaa';
 
-        // Atualização da contagem de KPIs
+        // Atualização da contagem de KPIs //
         if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
         else if (status === 'CHEGOU' || status === 'EM DESCARGA') { countPatio++; statusColor = 'var(--eletra-orange)'; }
         else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
@@ -2087,14 +2087,17 @@ async function renderMonitor(container) {
                     <label style="color:var(--eletra-orange)">Causa Raiz / Motivo:*</label>
                     <select id="modal-motivo" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px;">
                         <option value="">Selecione a raiz do problema...</option>
-                        <option value="No Show (Não Compareceu)">No Show (Não Compareceu)</option>
-                        <option value="Falta de NF ou CT-e">Falta de NF ou CT-e</option>
-                        <option value="PO Inexistente/Divergente">PO Inexistente ou Divergente</option>
-                        <option value="Carga Avariada / Quebrada">Carga Avariada / Quebrada</option>
-                        <option value="Veículo Inadequado para Carga">Veículo Inadequado para Carga</option>
-                        <option value="Falta de EPI do Motorista">Falta de EPI do Motorista</option>
-                        <option value="Motorista Bloqueado (GR)">Motorista Bloqueado (Gerenciadora)</option>
-                        <option value="Atraso do Fornecedor/Transporte">Atraso do Fornecedor/Transporte</option>
+                        <option value="No-Show">No-Show</option>
+                        <option value="PO Material divergente ou ausente">PO Material divergente ou ausente</option>
+                        <option value="NF Material divergente ou ausente">NF Material divergente ou ausente</option>
+                        <option value="PO Frete divergente ou ausente">PO Frete divergente ou ausente</option>
+                        <option value="CTRC divergente ou ausente">CTRC divergente ou ausente</option>
+                        <option value="Documento divergente ou ausente">Documento divergente ou ausente</option>
+                        <option value="Divergência na conferência">Divergência na conferência</option>
+                        <option value="Motorista sem EPI">Motorista sem EPI</option>
+                        <option value="Fila por atraso">Fila por atraso</option>
+                        <option value="Carga avariada">Carga avariada</option>
+                        <option value="Veículo inadequado">Veículo inadequado</option>
                         <option value="Outros">Outros</option>
                     </select>
                 </div>
