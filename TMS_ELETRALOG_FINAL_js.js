@@ -1783,7 +1783,6 @@ function toggleSlot(el, time) {
 async function saveBooking() {
     const date = document.getElementById('in-date').value;
     const location = document.getElementById('loc').value;
-    
     const poMat = document.getElementById('input-po-mat').value.trim();
     const nf = document.getElementById('input-nf').value.trim();
     const fornecedor = document.getElementById('input-fornecedor').value.trim();
@@ -1804,13 +1803,14 @@ async function saveBooking() {
     if (conflict) { notify(`ERRO: Horário ${conflict.time} acabou de ser ocupado.`, "error"); updateInboundSlots(); return; }
 
     if (!confirm(`Confirmar agendamento?`)) return;
+    const loteTimestamp = new Date().toISOString();
 
     const newBookings = selectedSlots.map(time => ({
         id: Date.now() + Math.random(),
         date, time, location,
         userId: CURRENT_USER.id,
         userName: CURRENT_USER.name,
-        timestamp: new Date().toISOString(),
+        timestamp: loteTimestamp, // Usa a mesma etiqueta de tempo para todos os slots
         details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obs }
     }));
 
@@ -1960,11 +1960,12 @@ async function renderMonitor(container) {
     const allAppts = await StorageManager.getAppointments();
     const dailyAppts = allAppts.filter(a => a.date === filterDate).sort((a, b) => a.time.localeCompare(b.time));
 
-    // LÓGICA DE AGRUPAMENTO
+    // LÓGICA DE AGRUPAMENTO (CORRIGIDA: Agrupa por PO + NF + Local)
     const groupedAppts = {};
     dailyAppts.forEach(a => {
-        // Usa o timestamp (gerado no momento do clique "Salvar") como ID do lote
-        const key = a.timestamp; 
+        // A chave agora é a combinação exata do documento, o que garante 100% de precisão no agrupamento do caminhão
+        const key = `${a.details.poMat}_${a.details.nf}_${a.location}`; 
+        
         if(!groupedAppts[key]) {
             groupedAppts[key] = {
                 ids: [], // Guarda todos os IDs de docs do Firebase deste grupo
@@ -1978,8 +1979,12 @@ async function renderMonitor(container) {
                 motivoOcorrencia: a.motivoOcorrencia || ''
             };
         }
+        
         groupedAppts[key].ids.push(a.id_doc);
-        groupedAppts[key].timeEnd = a.time; // Como a lista está ordenada, o último slot será o timeEnd
+        
+        // Garante que a janela de horário inicial e final estão sempre corretas
+        if (a.time < groupedAppts[key].timeStart) groupedAppts[key].timeStart = a.time;
+        if (a.time > groupedAppts[key].timeEnd) groupedAppts[key].timeEnd = a.time;
     });
 
     let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
@@ -2027,7 +2032,6 @@ async function renderMonitor(container) {
     }).join('');
 
     if (Object.keys(groupedAppts).length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhum veículo agendado para esta data.</td></tr>`;
-
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px; position:relative;">
             <div class="props-tabs">
