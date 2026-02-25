@@ -209,7 +209,7 @@ function loadPage(page, module) {
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
 }
 
-/* --- MÓDULO TRANSPORTADORA (FUNCIONAL E INTEGRADO) --- */
+/* --- MÓDULO TRANSPORTADORA (COMPLETO) --- */
 async function renderTransportadora(container) {
     if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
         container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Apenas Gestores e Master podem cadastrar transportadoras.</p></div>`;
@@ -221,6 +221,7 @@ async function renderTransportadora(container) {
     // Busca a lista no Firebase
     const transps = await StorageManager.getTransportadoras();
     
+    // Geração da Tabela com Ícones Corrigidos
     let rows = transps.map(t => `
         <tr style="border-bottom:1px solid #333;">
             <td style="padding:10px;">${t.cnpj}</td>
@@ -229,8 +230,8 @@ async function renderTransportadora(container) {
             <td>${t.rntrcValidade}<br><span style="font-size:0.7rem; color:${new Date(t.rntrcValidade) < new Date() ? '#FF3131' : '#00D4FF'}">RNTRC</span></td>
             <td style="font-size:0.7rem;">RCTR-C: ${t.seguros?.rctrc?.seguradora || '-'}<br>Frota: ${t.frotaPropriaPct || '0'}%</td>
             <td style="text-align:right;">
-                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:2px 8px; margin-right:5px;" onclick="handleEditTransportadora('${t.id_doc}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
-                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:2px 8px;" onclick="handleDeleteTransportadora('${t.id_doc}')" title="Apagar"><i class="fa-solid fa-trash"></i></button>
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditTransportadora('${t.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteTransportadora('${t.id_doc}')" title="Apagar"><i class="fa-solid fa-trash"></i></button>
             </td>
         </tr>
     `).join('');
@@ -284,10 +285,12 @@ async function renderTransportadora(container) {
             </div>
 
             <div id="lista-transp" class="tab-content">
-                <table class="data-table">
-                    <thead><tr><th>CNPJ</th><th>Razão / Fantasia</th><th>Contato</th><th>RNTRC</th><th>Detalhes</th><th>Ações</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead><tr><th>CNPJ</th><th>Razão / Fantasia</th><th>Contato</th><th>RNTRC</th><th>Detalhes</th><th>Ações</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
             </div>
         </div>`;
     
@@ -311,7 +314,6 @@ function validateTranspDates() {
         if (expired) { 
             status.innerText = "ATENÇÃO: DOC VENCIDO"; status.className = "status-neon inactive"; 
         } else { 
-            // Mantém o texto "EM EDIÇÃO" se estiver editando, senão "NOVO" ou "OK"
             if (!status.innerText.includes("EDIÇÃO") && !status.innerText.includes("NOVO")) {
                 status.innerText = "DOCUMENTAÇÃO OK"; 
             }
@@ -321,7 +323,7 @@ function validateTranspDates() {
 }
 
 async function handleSaveTransportadora() {
-    const idDoc = document.getElementById('t-id-doc').value; // Verifica se é edição
+    const idDoc = document.getElementById('t-id-doc').value;
     const cnpj = document.getElementById('t-cnpj').value.trim();
     const razao = document.getElementById('t-razao').value.trim();
 
@@ -350,7 +352,6 @@ async function handleSaveTransportadora() {
     };
 
     if (idDoc) {
-        // MODO ATUALIZAÇÃO
         if (!confirm(`Confirma a atualização dos dados de ${razao}?`)) return;
         const res = await StorageManager.updateTransportadora(idDoc, dataPayload);
         if (res.success) {
@@ -360,7 +361,6 @@ async function handleSaveTransportadora() {
             notify(res.msg, "error");
         }
     } else {
-        // MODO CRIAÇÃO (NOVO)
         if (!confirm(`Confirma o cadastro de ${razao}?`)) return;
         const res = await StorageManager.saveTransportadora(dataPayload);
         if (res.success) {
@@ -376,7 +376,6 @@ async function handleEditTransportadora(id) {
     const t = await StorageManager.getTransportadoraById(id);
     if (!t) { notify("Erro ao carregar dados.", "error"); return; }
 
-    // Preenche os campos
     document.getElementById('t-id-doc').value = t.id_doc;
     document.getElementById('t-cnpj').value = t.cnpj;
     document.getElementById('t-razao').value = t.razao;
@@ -389,7 +388,6 @@ async function handleEditTransportadora(id) {
     document.getElementById('t-frota').value = t.frotaPropriaPct || '';
     document.getElementById('t-idade').value = t.idadeMedia || '';
 
-    // Seguros
     if(t.seguros) {
         if(t.seguros.rctrc) {
             document.getElementById('t-rctrc').value = t.seguros.rctrc.apolice || '';
@@ -408,22 +406,19 @@ async function handleEditTransportadora(id) {
         }
     }
 
-    // Zonas
     document.querySelectorAll('.zone-btn').forEach(btn => {
         if (t.zonas && t.zonas.includes(btn.innerText)) btn.classList.add('selected');
         else btn.classList.remove('selected');
     });
 
-    // Ajusta UI para modo edição
     document.getElementById('status-card').innerText = "EM EDIÇÃO";
     document.getElementById('status-card').className = "status-neon active";
     document.getElementById('btn-save-transp').innerText = "ATUALIZAR DADOS";
     document.getElementById('btn-save-transp').style.color = "var(--eletra-orange)";
     document.getElementById('btn-save-transp').style.borderColor = "var(--eletra-orange)";
     
-    // Troca para a aba Geral
     switchTab('geral');
-    validateTranspDates(); // Revalida as datas carregadas
+    validateTranspDates();
     notify("Modo de edição ativado.", "info");
 }
 
@@ -432,11 +427,11 @@ function cancelEditMode() {
 }
 
 async function handleDeleteTransportadora(id_doc) {
-    if (!confirm("Deseja realmente excluir esta transportadora? Essa ação afeta relatórios futuros.")) return;
+    if (!confirm("Deseja realmente excluir esta transportadora?")) return;
     const res = await StorageManager.deleteTransportadora(id_doc);
     if (res.success) {
         notify("Transportadora excluída.");
-        renderTransportadora(document.getElementById('workspace')); // Atualiza a tela
+        renderTransportadora(document.getElementById('workspace'));
     }
 }
 
@@ -539,7 +534,6 @@ async function updateInboundSlots() {
             let tooltip = 'Livre';
 
             if (booking) {
-                // Tratativa para evitar quebra de aspas nas observações
                 const escObs = (booking.details.obs || '').replace(/'/g, "\\'");
 
                 if (booking.userId === CURRENT_USER.id) {
@@ -588,8 +582,6 @@ async function saveBooking() {
     const cnpjTransp = document.getElementById('input-cnpj-transp').value.trim();
     const poFrete = document.getElementById('input-po-frete').value.trim();
     const ctrc = document.getElementById('input-ctrc').value.trim();
-    
-    // --- NOVO: LENDO DA TELA ---
     const tipoVeiculo = document.getElementById('input-tipo-veiculo').value; 
     const obs = document.getElementById('input-obs').value.trim();
 
@@ -607,7 +599,6 @@ async function saveBooking() {
         userId: CURRENT_USER.id,
         userName: CURRENT_USER.name,
         timestamp: new Date().toISOString(),
-        // --- NOVO: ENVIANDO PARA O BANCO DE DADOS ---
         details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obs }
     }));
 
