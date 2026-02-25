@@ -122,6 +122,46 @@ const StorageManager = {
         return { success: true };
     },
 
+    deleteUser: async function(userId) {
+        const snapshot = await db.collection('usuarios').where('id', '==', userId).get();
+        if (snapshot.empty) return { success: false, msg: "Usuário não encontrado." };
+        
+        const doc = snapshot.docs[0];
+        if (doc.data().role === 'MASTER') return { success: false, msg: "Não pode excluir Master." };
+        
+        await db.collection('usuarios').doc(doc.id).delete();
+        return { success: true };
+    },
+
+    // ---> ADICIONE ESTE BLOCO AQUI <---
+    getTransportadoras: async function() {
+        try {
+            const snapshot = await db.collection('transportadoras').get();
+            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
+        } catch (e) { return []; }
+    },
+    saveTransportadora: async function(transp) {
+        const check = await db.collection('transportadoras').where('cnpj', '==', transp.cnpj).get();
+        if (!check.empty) return { success: false, msg: "CNPJ já cadastrado no sistema." };
+        await db.collection('transportadoras').add(transp);
+        this.logAction("CADASTRO", `Nova Transportadora: ${transp.razao}`);
+        return { success: true };
+    },
+    deleteTransportadora: async function(id_doc) {
+        await db.collection('transportadoras').doc(id_doc).delete();
+        return { success: true };
+    },
+    // ---------------------------------
+
+    logAction: function(action, details) {
+        db.collection('logs').add({
+            timestamp: new Date().toISOString(),
+            user: CURRENT_USER.name,
+            action: action,
+            details: details
+        });
+    },
+
     logAction: function(action, details) {
         db.collection('logs').add({
             timestamp: new Date().toISOString(),
@@ -188,58 +228,63 @@ function loadPage(page, module) {
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
 }
 
-/* --- MÓDULO TRANSPORTADORA (UNIFICADO E INTEGRADO AO BANCO) --- */
+/* --- MÓDULO TRANSPORTADORA (FUNCIONAL E INTEGRADO) --- */
 async function renderTransportadora(container) {
     if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
-        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Apenas Gestores podem gerenciar cadastros base.</p></div>`;
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Apenas Gestores e Master podem cadastrar transportadoras.</p></div>`;
         return;
     }
 
-    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando transportadoras da nuvem...</div>';
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando banco de transportadoras...</div>';
     
-    // Busca as que já existem no banco
+    // Busca a lista no Firebase
     const transps = await StorageManager.getTransportadoras();
     
     let rows = transps.map(t => `
         <tr style="border-bottom:1px solid #333;">
             <td style="padding:10px;">${t.cnpj}</td>
             <td><strong>${t.razao}</strong></td>
+            <td>${t.contatoNome} (${t.contatoTel})</td>
             <td>${t.rntrcValidade}</td>
-            <td>${t.idadeMedia || '-'} anos</td>
             <td style="text-align:right;">
-                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:2px 8px;" onclick="handleDeleteTransportadora('${t.id_doc}')"><i class="fa-solid fa-trash"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:2px 8px;" onclick="handleDeleteTransportadora('${t.id_doc}')" title="Apagar"><i class="fa-solid fa-trash"></i></button>
             </td>
         </tr>
     `).join('');
 
     if (transps.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhuma parceira cadastrada.</td></tr>`;
 
+    // Retirei a aba "Operacional" já que unificamos tudo
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px;">
             <div id="status-card" class="status-neon active">NOVO CADASTRO</div>
             <div class="props-tabs">
-                <button class="tab-btn active" onclick="switchTab('geral')">Geral / Seguros / Operacional</button>
-                <button class="tab-btn" onclick="switchTab('lista-transp')" style="color:var(--eletra-orange)">Cadastradas (${transps.length})</button>
+                <button class="tab-btn active" onclick="switchTab('geral')">Dados da Transportadora</button>
+                <button class="tab-btn" onclick="switchTab('lista-transp')" style="color:var(--eletra-orange)">Base Cadastrada (${transps.length})</button>
             </div>
             
             <div id="geral" class="tab-content active">
-                <div class="form-row"><label>CNPJ*:</label><input type="text" id="t-cnpj" placeholder="Apenas números"></div>
-                <div class="form-row"><label>Razão Social*:</label><input type="text" id="t-razao" placeholder="Nome oficial"></div>
+                <div class="form-row"><label>CNPJ*:</label><input type="text" id="t-cnpj" placeholder="Digite apenas números"></div>
+                <div class="form-row"><label>Razão Social*:</label><input type="text" id="t-razao" placeholder="Nome oficial na Receita Federal"></div>
                 <div class="form-row"><label>Nome Fantasia:</label><input type="text" id="t-fantasia" placeholder="Nome comercial"></div>
                 
+                <fieldset class="prop-group">
+                    <legend>CONTATO OPERACIONAL</legend>
+                    <div class="form-row">
+                        <label>Nome do Contato:</label><input type="text" id="t-contato-nome" placeholder="Ex: João Silva">
+                        <label style="width:70px; text-align:right; margin-right:10px;">Telefone:</label><input type="text" id="t-contato-tel" placeholder="(11) 99999-9999">
+                    </div>
+                </fieldset>
+
                 <fieldset class="prop-group">
                     <legend>ANTT & FROTA</legend>
                     <div class="form-row"><label>RNTRC:</label><input type="text" id="t-rntrc" style="width:40%"><label style="width:60px; text-align:right">Validade:</label><input type="date" id="t-val-rntrc" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
                     <div class="form-row"><label>% Frota Própria:</label><input type="number" id="t-frota" placeholder="Ex: 60"></div>
                     <div class="form-row"><label>Idade Média (Anos):</label><input type="number" id="t-idade" placeholder="Ex: 5"></div>
                 </fieldset>
-
-                <fieldset class="prop-group"><legend>ZONAS DE ATUAÇÃO</legend>
-                    <div class="marking-group">
-                        ${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn zone-btn selected" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}
-                    </div>
-                </fieldset>
-
+                
+                <fieldset class="prop-group"><legend>ZONAS DE ATUAÇÃO</legend><div class="marking-group">${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn zone-btn selected" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}</div></fieldset>
+                
                 <fieldset class="prop-group">
                     <legend>APÓLICES DE SEGURO</legend>
                     <div class="form-row"><label style="width:130px; font-size:0.7rem;">RCTR-C:</label><input type="text" id="t-rctrc" placeholder="Apólice" style="width:20%"><input type="text" id="t-seg-rctrc" placeholder="Seguradora" style="width:30%"><input type="date" id="t-val-rctrc" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
@@ -248,19 +293,90 @@ async function renderTransportadora(container) {
                 </fieldset>
 
                 <div class="props-footer" style="margin-top: 20px;">
-                    <button class="mark-btn action apply" onclick="handleSaveTransportadora()">SALVAR CADASTRO</button>
+                    <button class="mark-btn action apply" onclick="handleSaveTransportadora()">SALVAR NA NUVEM</button>
+                    <button class="mark-btn action" onclick="goHome()">CANCELAR</button>
                 </div>
             </div>
 
             <div id="lista-transp" class="tab-content">
                 <table class="data-table">
-                    <thead><tr><th>CNPJ</th><th>Razão Social</th><th>Validade RNTRC</th><th>Idade Frota</th><th>Ações</th></tr></thead>
+                    <thead><tr><th>CNPJ</th><th>Razão Social</th><th>Contato Operacional</th><th>Validade RNTRC</th><th>Ações</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
         </div>`;
     
     validateTranspDates();
+}
+
+function validateTranspDates() {
+    const sysDate = new Date(SYSTEM_DATE_STR);
+    const ids = ['t-val-rntrc', 't-val-rctrc', 't-val-rcdc', 't-val-rcv'];
+    let expired = false;
+    
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (new Date(el.value) < sysDate) { el.classList.add('input-error'); expired = true; }
+        else { el.classList.remove('input-error'); }
+    });
+    
+    const status = document.getElementById('status-card');
+    if (status) {
+        if (expired) { 
+            status.innerText = "ATENÇÃO: DOC VENCIDO"; status.className = "status-neon inactive"; 
+        }
+        else { status.innerText = "DOCUMENTAÇÃO OK"; status.className = "status-neon active"; }
+    }
+}
+
+async function handleSaveTransportadora() {
+    const cnpj = document.getElementById('t-cnpj').value.trim();
+    const razao = document.getElementById('t-razao').value.trim();
+
+    if (!cnpj || !razao) { notify("CNPJ e Razão Social são obrigatórios!", "error"); return; }
+
+    const zonasAtivas = Array.from(document.querySelectorAll('.zone-btn.selected')).map(btn => btn.innerText);
+
+    const novaTransp = {
+        cnpj: cnpj,
+        razao: razao,
+        fantasia: document.getElementById('t-fantasia').value.trim(),
+        contatoNome: document.getElementById('t-contato-nome').value.trim(),
+        contatoTel: document.getElementById('t-contato-tel').value.trim(),
+        rntrc: document.getElementById('t-rntrc').value.trim(),
+        rntrcValidade: document.getElementById('t-val-rntrc').value,
+        seguros: {
+            rctrc: { apolice: document.getElementById('t-rctrc').value.trim(), seguradora: document.getElementById('t-seg-rctrc').value.trim(), validade: document.getElementById('t-val-rctrc').value },
+            rcdc: { apolice: document.getElementById('t-rcdc').value.trim(), seguradora: document.getElementById('t-seg-rcdc').value.trim(), validade: document.getElementById('t-val-rcdc').value },
+            rcv: { apolice: document.getElementById('t-rcv').value.trim(), seguradora: document.getElementById('t-seg-rcv').value.trim(), validade: document.getElementById('t-val-rcv').value }
+        },
+        frotaPropriaPct: document.getElementById('t-frota').value.trim(),
+        idadeMedia: document.getElementById('t-idade').value.trim(),
+        zonas: zonasAtivas,
+        cadastradoPor: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (!confirm(`Confirmar o cadastro de ${razao}?`)) return;
+
+    const res = await StorageManager.saveTransportadora(novaTransp);
+    
+    if (res.success) {
+        notify("Transportadora salva com sucesso!");
+        renderTransportadora(document.getElementById('workspace')); // Atualiza a tela
+    } else {
+        notify(res.msg, "error");
+    }
+}
+
+async function handleDeleteTransportadora(id_doc) {
+    if (!confirm("Deseja realmente excluir esta transportadora? Essa ação afeta relatórios futuros.")) return;
+    const res = await StorageManager.deleteTransportadora(id_doc);
+    if (res.success) {
+        notify("Transportadora excluída.");
+        renderTransportadora(document.getElementById('workspace')); // Atualiza a tela
+    }
 }
 
 function validateTranspDates() {
@@ -724,5 +840,4 @@ function showBookingInfo(u,p,s,t) {
         }
     });
 }
-
 function clearData() { StorageManager.clearData(); }
