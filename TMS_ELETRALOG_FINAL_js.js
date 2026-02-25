@@ -647,15 +647,60 @@ async function renderCliente(container) {
                 </fieldset>
 
                 <fieldset class="prop-group">
-                    <legend>CONTATO & RESTRIÇÕES OPERACIONAIS</legend>
+                    <legend>CONTATO OPERACIONAL</legend>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
                         <div class="form-row-col"><label>Nome Contato</label><input type="text" id="c-contato-nome" placeholder="Responsável Recebimento"></div>
                         <div class="form-row-col"><label>Telefone / Whats</label><input type="text" id="c-contato-tel" placeholder="(11) 90000-0000"></div>
                         <div class="form-row-col"><label>E-mail</label><input type="email" id="c-contato-email" placeholder="email@cliente.com"></div>
                     </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>REGRAS DE RECEBIMENTO & AGENDAMENTO (MATRIZ LOGÍSTICA)</legend>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div class="form-row-col">
+                            <label>Horário de Func.</label>
+                            <input type="text" id="c-horario" placeholder="Ex: 08:00 às 16:00">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Método de Agend.</label>
+                            <select id="c-metodo-agendamento">
+                                <option value="">Selecione...</option>
+                                <option value="E-MAIL">E-mail</option>
+                                <option value="PORTAL">Portal B2B</option>
+                                <option value="TELEFONE">Telefone</option>
+                                <option value="ORDEM DE CHEGADA">Ordem de Chegada</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Permite Sobreposição?</label>
+                            <select id="c-sobreposicao">
+                                <option value="SIM">SIM</option>
+                                <option value="NÃO">NÃO</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Dimensões Max (CxLxA)</label>
+                            <input type="text" id="c-dimensoes" placeholder="Ex: 1000X1200X970">
+                        </div>
+                    </div>
+
+                    <div class="form-row-col">
+                        <label style="color:var(--eletra-orange)">Tipos de Veículos Aceitos (Clique para selecionar)</label>
+                        <div class="marking-group">
+                            <button class="mark-btn veic-btn" onclick="this.classList.toggle('selected')">CARRETA BAÚ</button>
+                            <button class="mark-btn veic-btn" onclick="this.classList.toggle('selected')">CARRETA SIDER</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">TRUCK</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">TOCO</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">VUC / 3/4</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">UTILITÁRIO</button>
+                        </div>
+                    </div>
+
                     <div class="form-row-col" style="margin-top:10px;">
-                        <label style="color:var(--eletra-orange)">Restrições de Entrega (Horários, Veículos permitidos, Agendamento prévio, etc)</label>
-                        <input type="text" id="c-restricoes" placeholder="Ex: Recebe somente das 08h às 12h. Carreta não entra na rua.">
+                        <label>Observações / Exceções de Entrega</label>
+                        <input type="text" id="c-obs-logistica" placeholder="Ex: Sobreposição permitida com altura máxima de 1,4 metros...">
                     </div>
                 </fieldset>
 
@@ -703,6 +748,9 @@ async function handleSaveCliente() {
 
     if (!documento || !razao) { notify("CNPJ/CPF e Razão Social são obrigatórios.", "error"); return; }
 
+    // Coleta todos os botões de veículos que estão marcados
+    const veiculosAceitos = Array.from(document.querySelectorAll('.veic-btn.selected')).map(btn => btn.innerText);
+
     const payload = {
         documento: documento,
         ie: document.getElementById('c-ie').value.trim(),
@@ -718,7 +766,15 @@ async function handleSaveCliente() {
         contatoNome: document.getElementById('c-contato-nome').value.trim(),
         contatoTel: document.getElementById('c-contato-tel').value.trim(),
         contatoEmail: document.getElementById('c-contato-email').value.trim(),
-        restricoes: document.getElementById('c-restricoes').value.trim(),
+        
+        // NOVOS DADOS DA MATRIZ
+        horarioRecebimento: document.getElementById('c-horario').value.trim(),
+        metodoAgendamento: document.getElementById('c-metodo-agendamento').value,
+        sobreposicao: document.getElementById('c-sobreposicao').value,
+        dimensoes: document.getElementById('c-dimensoes').value.trim(),
+        veiculosPermitidos: veiculosAceitos,
+        obsLogistica: document.getElementById('c-obs-logistica').value.trim(),
+
         user: CURRENT_USER.name,
         timestamp: new Date().toISOString()
     };
@@ -755,7 +811,22 @@ async function handleEditCliente(id) {
     document.getElementById('c-contato-nome').value = c.contatoNome || '';
     document.getElementById('c-contato-tel').value = c.contatoTel || '';
     document.getElementById('c-contato-email').value = c.contatoEmail || '';
-    document.getElementById('c-restricoes').value = c.restricoes || '';
+
+    // CARREGA NOVOS DADOS DA MATRIZ
+    document.getElementById('c-horario').value = c.horarioRecebimento || '';
+    document.getElementById('c-metodo-agendamento').value = c.metodoAgendamento || '';
+    document.getElementById('c-sobreposicao').value = c.sobreposicao || 'SIM';
+    document.getElementById('c-dimensoes').value = c.dimensoes || '';
+    document.getElementById('c-obs-logistica').value = c.obsLogistica || '';
+
+    // REACENDE OS BOTÕES DE VEÍCULOS
+    document.querySelectorAll('.veic-btn').forEach(btn => {
+        if (c.veiculosPermitidos && c.veiculosPermitidos.includes(btn.innerText)) {
+            btn.classList.add('selected');
+        } else {
+            btn.classList.remove('selected');
+        }
+    });
 
     document.getElementById('cli-status-card').innerText = "EM EDIÇÃO";
     document.getElementById('cli-status-card').className = "status-neon active";
