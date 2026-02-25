@@ -236,7 +236,7 @@ async function renderTransportadora(container) {
 
                 <fieldset class="prop-group"><legend>ZONAS DE ATUAÇÃO</legend>
                     <div class="marking-group">
-                        ${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn zone-btn" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}
+                        ${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn zone-btn selected" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}
                     </div>
                 </fieldset>
 
@@ -724,4 +724,5 @@ function showBookingInfo(u,p,s,t) {
         }
     });
 }
+
 function clearData() { StorageManager.clearData(); }
