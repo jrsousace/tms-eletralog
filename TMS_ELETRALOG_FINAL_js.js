@@ -1986,38 +1986,30 @@ async function renderMonitor(container) {
 
     let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
 
-    // Renderiza usando os grupos em vez das linhas individuais
+    // Renderiza usando os grupos
     let rows = Object.values(groupedAppts).map(g => {
         let status = g.status || 'AGENDADO';
         
-        // --- NOVA LÓGICA: ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO ---
+        // --- ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO ---
         if (status === 'AGENDADO') {
             if (filterDate < SYSTEM_DATE_STR) {
-                // Se a data filtrada for ontem ou antes, e ninguém atendeu, está atrasado.
                 status = 'ATRASADO';
             } else if (filterDate === SYSTEM_DATE_STR) {
-                // Se for hoje, compara com a hora exata do computador
                 const now = new Date();
                 const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-                
-                // Só considera atrasado se passar do horário FINAL da janela (timeEnd)
-                if (g.timeEnd < currentTime) { 
-                    status = 'ATRASADO';
-                }
+                if (g.timeEnd < currentTime) { status = 'ATRASADO'; }
             }
         }
 
         let statusColor = '#aaa';
 
+        // Atualização da contagem de KPIs
         if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
         else if (status === 'CHEGOU' || status === 'EM DESCARGA') { countPatio++; statusColor = 'var(--eletra-orange)'; }
         else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
-        else if (status === 'ATRASADO' || status === 'NO SHOW' || status === 'DIVERGÊNCIA') { countOcorrencia++; statusColor = '#FF3131'; }
+        else if (status === 'ATRASADO' || status === 'ANOMALIA') { countOcorrencia++; statusColor = '#FF3131'; }
 
-        // Formata a janela de horário (Ex: 08:00 ou 08:00 às 08:30)
         let timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
-        
-        // Transforma o array de IDs numa string separada por vírgulas para passar ao botão
         let idsString = g.ids.join(',');
 
         return `
@@ -2036,14 +2028,17 @@ async function renderMonitor(container) {
                 <span style="border: 1px solid ${statusColor}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">
                     ${status}
                 </span>
-                
                 ${g.details.obs ? `<br><span style="font-size:0.65rem; color:var(--eletra-aqua); margin-top:6px; display:block;"><i class="fa-solid fa-circle-info"></i> Plan: ${g.details.obs}</span>` : ''}
-                
                 ${g.motivoOcorrencia ? `<span style="font-size:0.65rem; color:#FF8200; margin-top:4px; display:block;">Motivo: ${g.motivoOcorrencia}</span>` : ''}
-                ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs Operacional: ${g.statusObs}</span>` : ''}
+                ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs: ${g.statusObs}</span>` : ''}
             </td>
             <td style="text-align:right;">
-                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px;" onclick="openStatusModal('${idsString}', '${status}')" title="Atualizar Status"><i class="fa-solid fa-truck-ramp-box"></i> ATUALIZAR</button>
+                <div style="display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; width: 170px; float: right;">
+                    <button class="mark-btn" style="border-color:var(--eletra-orange); color:var(--eletra-orange); padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'CHEGOU')">CHEGADA</button>
+                    <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'EM DESCARGA')">DESCARGA</button>
+                    <button class="mark-btn" style="border-color:#39FF14; color:#39FF14; padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'FINALIZADO')">SAÍDA</button>
+                    <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="openAnomaliaModal('${idsString}')">ANOMALIA</button>
+                </div>
             </td>
         </tr>
         `;
@@ -2084,26 +2079,15 @@ async function renderMonitor(container) {
 
             <div id="modal-backdrop" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); z-index:9998;"></div>
             
-            <div id="status-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:var(--bg-asfalto); padding:20px; border-radius:8px; border:1px solid var(--eletra-aqua); z-index:9999; width:90%; max-width:400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
-                <h3 style="color:var(--eletra-aqua); margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;"><i class="fa-solid fa-list-check"></i> Atualizar Status Logístico</h3>
+            <div id="status-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:var(--bg-asfalto); padding:20px; border-radius:8px; border:1px solid #FF3131; z-index:9999; width:90%; max-width:400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
+                <h3 style="color:#FF3131; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;"><i class="fa-solid fa-triangle-exclamation"></i> Registrar Anomalia</h3>
                 <input type="hidden" id="modal-id-doc">
-                
-                <div class="form-row-col" style="margin-bottom:15px;">
-                    <label>Novo Status da Carga:</label>
-                    <select id="modal-status" onchange="toggleMotivoField()" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px; font-weight:bold;">
-                        <option value="AGENDADO">AGENDADO</option>
-                        <option value="CHEGOU">CHEGOU (PORTARIA)</option>
-                        <option value="EM DESCARGA">EM DESCARGA (DOCA)</option>
-                        <option value="FINALIZADO">FINALIZADO / LIBERADO</option>
-                        <option value="DIVERGÊNCIA">DIVERGÊNCIA / OCORRÊNCIA</option>
-                        <option value="NO SHOW">NO SHOW (NÃO COMPARECEU)</option>
-                    </select>
-                </div>
 
-                <div class="form-row-col" id="div-motivo" style="display:none; margin-bottom:15px;">
-                    <label style="color:var(--eletra-orange)">Motivo da Anomalia / Divergência:*</label>
+                <div class="form-row-col" style="margin-bottom:15px;">
+                    <label style="color:var(--eletra-orange)">Causa Raiz / Motivo:*</label>
                     <select id="modal-motivo" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px;">
                         <option value="">Selecione a raiz do problema...</option>
+                        <option value="No Show (Não Compareceu)">No Show (Não Compareceu)</option>
                         <option value="Falta de NF ou CT-e">Falta de NF ou CT-e</option>
                         <option value="PO Inexistente/Divergente">PO Inexistente ou Divergente</option>
                         <option value="Carga Avariada / Quebrada">Carga Avariada / Quebrada</option>
@@ -2117,12 +2101,12 @@ async function renderMonitor(container) {
 
                 <div class="form-row-col" style="margin-bottom:20px;">
                     <label>Observações Adicionais:</label>
-                    <textarea id="modal-obs" rows="3" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px; resize:none;" placeholder="Descreva os detalhes da operação ou da anomalia..."></textarea>
+                    <textarea id="modal-obs" rows="3" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px; resize:none;" placeholder="Descreva os detalhes da anomalia (Opcional)..."></textarea>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:10px;">
                     <button class="mark-btn action" onclick="closeStatusModal()">CANCELAR</button>
-                    <button class="mark-btn action apply" onclick="confirmStatusChange()">SALVAR STATUS</button>
+                    <button class="mark-btn action" style="border-color:#FF3131; color:#FF3131;" onclick="confirmAnomalia()">SALVAR ANOMALIA</button>
                 </div>
             </div>
         </div>
@@ -2130,18 +2114,28 @@ async function renderMonitor(container) {
 }
 
 // Controles do Modal de Status
-function openStatusModal(idsString, currentStatus) {
-    document.getElementById('modal-id-doc').value = idsString;
-    const statusSelect = document.getElementById('modal-status');
-    // Se o sistema marcou como ATRASADO automaticamente, a próxima ação óbvia é apontar a chegada
-    if (currentStatus === 'ATRASADO') {
-        statusSelect.value = 'CHEGOU';
+// 1. Atualização rápida sem Modal (Chegada, Descarga, Saída)
+async function quickStatusUpdate(idsString, newStatus) {
+    if (!confirm(`Confirma o apontamento de: ${newStatus}?`)) return;
+    
+    const id_docs = idsString.split(',');
+    
+    // Envia status novo, sem obs e sem motivo
+    const res = await StorageManager.updateStatusBatch(id_docs, newStatus, "", "");
+    if(res.success) {
+        notify(`Status atualizado para ${newStatus}!`);
+        renderMonitor(document.getElementById('workspace')); // Atualiza a tabela
     } else {
-        statusSelect.value = currentStatus;
+        notify("Erro ao atualizar status.", "error");
     }
-    document.getElementById('modal-obs').value = "";
+}
+
+// 2. Abertura do Modal apenas para Anomalia
+function openAnomaliaModal(idsString) {
+    document.getElementById('modal-id-doc').value = idsString;
     document.getElementById('modal-motivo').value = "";
-    toggleMotivoField(); // Verifica se precisa mostrar a aba de motivos
+    document.getElementById('modal-obs').value = "";
+    
     document.getElementById('modal-backdrop').style.display = 'block';
     document.getElementById('status-modal').style.display = 'block';
 }
@@ -2151,45 +2145,29 @@ function closeStatusModal() {
     document.getElementById('status-modal').style.display = 'none';
 }
 
-function toggleMotivoField() {
-    const status = document.getElementById('modal-status').value;
-    const divMotivo = document.getElementById('div-motivo');
-    // Se o status for crítico, mostra a caixa obrigatória de motivos
-    if (['ATRASADO', 'NO SHOW', 'DIVERGÊNCIA'].includes(status)) {
-        divMotivo.style.display = 'block';
-    } else {
-        divMotivo.style.display = 'none';
-    }
-}
-
-async function confirmStatusChange() {
-    // O id_doc agora pode conter vários IDs separados por vírgula
+// 3. Salvar Anomalia com validação de Causa Raiz
+async function confirmAnomalia() {
     const idsString = document.getElementById('modal-id-doc').value;
-    const newStatus = document.getElementById('modal-status').value;
+    const motivo = document.getElementById('modal-motivo').value;
     const obs = document.getElementById('modal-obs').value.trim();
-    let motivo = "";
 
-    // Converte a string de volta para Array
-    const id_docs = idsString.split(',');
-
-    if (['ATRASADO', 'NO SHOW', 'DIVERGÊNCIA'].includes(newStatus)) {
-        motivo = document.getElementById('modal-motivo').value;
-        if (!motivo) {
-            notify("Atenção: É obrigatório selecionar o Motivo da Anomalia!", "error");
-            document.getElementById('modal-motivo').focus();
-            return;
-        }
+    if (!motivo) {
+        notify("Atenção: É obrigatório selecionar a Causa Raiz da Anomalia!", "error");
+        document.getElementById('modal-motivo').focus();
+        return;
     }
 
-    // Chama a nova função que atualiza múltiplos documentos de uma vez
-    const res = await StorageManager.updateStatusBatch(id_docs, newStatus, obs, motivo);
+    const id_docs = idsString.split(',');
+    
+    // Salva forçando o status para 'ANOMALIA'
+    const res = await StorageManager.updateStatusBatch(id_docs, 'ANOMALIA', obs, motivo);
     
     if(res.success) {
-        notify(`Status operacional atualizado!`);
+        notify(`Anomalia registada com sucesso!`, "error");
         closeStatusModal();
-        renderMonitor(document.getElementById('workspace')); // Atualiza a tabela
+        renderMonitor(document.getElementById('workspace')); 
     } else {
-        notify("Erro ao atualizar status.", "error");
+        notify("Erro ao registar anomalia.", "error");
     }
 }
 
