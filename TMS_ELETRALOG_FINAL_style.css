@@ -125,3 +125,53 @@ header.topbar h2 { color: var(--eletra-aqua); font-size: 1.1rem; text-transform:
 /* Utilitário para colunas do formulário */
 .form-row-col label { display: block; font-size: 0.7rem; color: #aaa; margin-bottom: 2px; }
 .form-row-col input, .form-row-col select { width: 100%; padding: 6px; background: #0B0E11; border: 1px solid var(--border-color); color: white; border-radius: 3px; }
+
+/* =========================================
+   RESPONSIVIDADE E MOBILE
+   ========================================= */
+@media (max-width: 768px) {
+    /* Mostra o botão sanduíche */
+    #mobile-menu-btn {
+        display: block !important;
+    }
+    
+    /* Transforma a Sidebar num Menu Lateral Deslizante */
+    #sidebar {
+        position: fixed;
+        left: -320px; /* Escondido por padrão fora da tela */
+        top: 0;
+        height: 100vh;
+        z-index: 9999;
+        box-shadow: 5px 0 15px rgba(0,0,0,0.8);
+    }
+    
+    /* Classe adicionada pelo JS para mostrar o menu */
+    #sidebar.active {
+        left: 0; 
+    }
+
+    /* Ajusta a área de trabalho para ocupar 100% no celular */
+    .topbar { padding: 15px; }
+    .workspace { padding: 15px; }
+
+    /* Quebra as tabelas e os formulários em colunas únicas */
+    div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+        gap: 15px !important;
+    }
+    
+    .form-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .form-row label {
+        width: 100% !important;
+        text-align: left !important;
+        margin-bottom: 5px;
+    }
+    
+    .form-row input, .form-row select {
+        width: 100% !important;
+    }
+}

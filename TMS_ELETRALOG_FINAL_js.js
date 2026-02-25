@@ -154,6 +154,7 @@ const StorageManager = {
             await db.collection('agendamentos').doc(id_doc).update({
                 status: newStatus,
                 statusObs: obs,
+                motivoOcorrencia: motivoOcorrencia,
                 statusUpdatedAt: new Date().toISOString()
             });
             this.logAction("MONITOR", `Status alterado p/ ${newStatus} (Agendamento ID: ${id_doc})`);
@@ -162,7 +163,27 @@ const StorageManager = {
             return { success: false, msg: "Erro ao atualizar status logístico." }; 
         }
     },
-
+    // Atualiza o Status de Vários Slots Agrupados de uma vez
+    updateStatusBatch: async function(id_docs, newStatus, obs, motivoOcorrencia = "") {
+        try {
+            const batch = db.batch();
+            id_docs.forEach(id => {
+                const ref = db.collection('agendamentos').doc(id);
+                batch.update(ref, {
+                    status: newStatus,
+                    statusObs: obs,
+                    motivoOcorrencia: motivoOcorrencia,
+                    statusUpdatedAt: new Date().toISOString()
+                });
+            });
+            await batch.commit();
+            this.logAction("MONITOR", `Status em lote alterado p/ ${newStatus} (${id_docs.length} slots)`);
+            return { success: true };
+        } catch(e) {
+            console.error(e);
+            return { success: false, msg: "Erro ao atualizar status em lote." };
+        }
+    },
     saveUser: async function(newUser) {
         const check = await db.collection('usuarios').where('user', '==', newUser.user).get();
         if (!check.empty) return { success: false, msg: "Login já existe." };
@@ -281,6 +302,11 @@ function toggleModule(id) {
     document.querySelectorAll('.module-group').forEach(g => g.classList.remove('active'));
     if (!isActive) el.classList.add('active');
 }
+// Abre e fecha o menu lateral no celular
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('active');
+}
 function switchTab(tabId) {
     const content = document.querySelectorAll('.tab-content');
     const btns = document.querySelectorAll('.tab-btn');
@@ -321,6 +347,9 @@ function loadPage(page, module) {
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
+    if (window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.remove('active');
+    }
 }
 
 /* --- MÓDULO TRANSPORTADORA (COMPLETO) --- */
@@ -1922,66 +1951,92 @@ async function updateLogPanel(date, location) {
 }
 
 /* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
+/* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
 async function renderMonitor(container) {
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando Torre de Controle...</div>';
 
-    // Pega a data selecionada ou usa a data de hoje como padrão
     const filterDate = document.getElementById('monitor-date') ? document.getElementById('monitor-date').value : SYSTEM_DATE_STR;
 
     const allAppts = await StorageManager.getAppointments();
     const dailyAppts = allAppts.filter(a => a.date === filterDate).sort((a, b) => a.time.localeCompare(b.time));
 
-    // Variáveis para os KPIs (Indicadores)
+    // LÓGICA DE AGRUPAMENTO
+    const groupedAppts = {};
+    dailyAppts.forEach(a => {
+        // Usa o timestamp (gerado no momento do clique "Salvar") como ID do lote
+        const key = a.timestamp; 
+        if(!groupedAppts[key]) {
+            groupedAppts[key] = {
+                ids: [], // Guarda todos os IDs de docs do Firebase deste grupo
+                timeStart: a.time,
+                timeEnd: a.time,
+                details: a.details,
+                location: a.location,
+                userName: a.userName,
+                status: a.status || 'AGENDADO',
+                statusObs: a.statusObs || '',
+                motivoOcorrencia: a.motivoOcorrencia || ''
+            };
+        }
+        groupedAppts[key].ids.push(a.id_doc);
+        groupedAppts[key].timeEnd = a.time; // Como a lista está ordenada, o último slot será o timeEnd
+    });
+
     let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
 
-    let rows = dailyAppts.map(a => {
-        // Se não tiver status, o padrão é AGENDADO
-        let status = a.status || 'AGENDADO';
+    // Renderiza usando os grupos em vez das linhas individuais
+    let rows = Object.values(groupedAppts).map(g => {
+        let status = g.status || 'AGENDADO';
         let statusColor = '#aaa';
 
-        // Lógica de Cores e Contagem
         if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
         else if (status === 'CHEGOU' || status === 'EM DESCARGA') { countPatio++; statusColor = 'var(--eletra-orange)'; }
         else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
-        else if (status === 'ATRASADO' || status === 'NO SHOW') { countOcorrencia++; statusColor = '#FF3131'; }
+        else if (status === 'ATRASADO' || status === 'NO SHOW' || status === 'DIVERGÊNCIA') { countOcorrencia++; statusColor = '#FF3131'; }
+
+        // Formata a janela de horário (Ex: 08:00 ou 08:00 às 08:30)
+        let timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+        
+        // Transforma o array de IDs numa string separada por vírgulas para passar ao botão
+        let idsString = g.ids.join(',');
 
         return `
         <tr style="border-bottom:1px solid #333;">
-            <td style="padding:10px; font-weight:bold; color:var(--eletra-aqua); font-size:1.1rem;">${a.time}</td>
+            <td style="padding:10px; font-weight:bold; color:var(--eletra-aqua); font-size:1.1rem; white-space:nowrap;">${timeWindow}</td>
             <td>
-                <span style="font-weight:bold;">${a.details.transp || 'Não Informada'}</span><br>
-                <span style="font-size:0.7rem; color:#888;">Veículo: ${a.details.tipoVeiculo || '-'}</span>
+                <span style="font-weight:bold;">${g.details.transp || 'Não Informada'}</span><br>
+                <span style="font-size:0.7rem; color:#888;">Veículo: ${g.details.tipoVeiculo || '-'}</span>
             </td>
             <td>
-                PO: ${a.details.poMat}<br>
-                <span style="font-size:0.7rem; color:#888;">NF: ${a.details.nf}</span>
+                PO: ${g.details.poMat}<br>
+                <span style="font-size:0.7rem; color:#888;">NF: ${g.details.nf}</span>
             </td>
-            <td>${a.location}</td>
+            <td>${g.location}</td>
             <td>
                 <span style="border: 1px solid ${statusColor}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">
                     ${status}
                 </span>
-                ${a.statusObs ? `<br><span style="font-size:0.65rem; color:#888; margin-top:4px; display:block;">Obs: ${a.statusObs}</span>` : ''}
+                ${g.motivoOcorrencia ? `<br><span style="font-size:0.65rem; color:#FF8200; margin-top:4px; display:block;">Motivo: ${g.motivoOcorrencia}</span>` : ''}
+                ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs: ${g.statusObs}</span>` : ''}
             </td>
             <td style="text-align:right;">
-                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px;" onclick="promptChangeStatus('${a.id_doc}', '${status}')" title="Atualizar Status"><i class="fa-solid fa-truck-ramp-box"></i> ATUALIZAR</button>
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px;" onclick="openStatusModal('${idsString}', '${status}')" title="Atualizar Status"><i class="fa-solid fa-truck-ramp-box"></i> ATUALIZAR</button>
             </td>
         </tr>
         `;
     }).join('');
 
-    if (dailyAppts.length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhum veículo agendado para esta data.</td></tr>`;
+    if (Object.keys(groupedAppts).length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhum veículo agendado para esta data.</td></tr>`;
 
     container.innerHTML = `
-        <div class="props-container" style="height:auto; min-height:650px;">
+        <div class="props-container" style="height:auto; min-height:650px; position:relative;">
             <div class="props-tabs">
                 <button class="tab-btn active" onclick="switchTab('mon-inbound')">Monitor Inbound</button>
                 <button class="tab-btn" onclick="switchTab('mon-outbound')">Monitor Outbound</button>
             </div>
 
             <div id="mon-inbound" class="tab-content active">
-                
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color); flex-wrap:wrap; gap:15px;">
                     <div>
                         <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
                         <input type="date" id="monitor-date" value="${filterDate}" onchange="renderMonitor(document.getElementById('workspace'))" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
@@ -2004,40 +2059,112 @@ async function renderMonitor(container) {
             </div>
             
             <div id="mon-outbound" class="tab-content"><p style="padding:40px; text-align:center;">Monitoramento Outbound em construção.</p></div>
+
+            <div id="modal-backdrop" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); z-index:9998;"></div>
+            
+            <div id="status-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:var(--bg-asfalto); padding:20px; border-radius:8px; border:1px solid var(--eletra-aqua); z-index:9999; width:90%; max-width:400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
+                <h3 style="color:var(--eletra-aqua); margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;"><i class="fa-solid fa-list-check"></i> Atualizar Status Logístico</h3>
+                <input type="hidden" id="modal-id-doc">
+                
+                <div class="form-row-col" style="margin-bottom:15px;">
+                    <label>Novo Status da Carga:</label>
+                    <select id="modal-status" onchange="toggleMotivoField()" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px; font-weight:bold;">
+                        <option value="AGENDADO">AGENDADO</option>
+                        <option value="CHEGOU">CHEGOU (PORTARIA)</option>
+                        <option value="EM DESCARGA">EM DESCARGA (DOCA)</option>
+                        <option value="FINALIZADO">FINALIZADO / LIBERADO</option>
+                        <option value="DIVERGÊNCIA">DIVERGÊNCIA / OCORRÊNCIA</option>
+                        <option value="ATRASADO">ATRASADO</option>
+                        <option value="NO SHOW">NO SHOW (NÃO COMPARECEU)</option>
+                    </select>
+                </div>
+
+                <div class="form-row-col" id="div-motivo" style="display:none; margin-bottom:15px;">
+                    <label style="color:var(--eletra-orange)">Motivo da Anomalia / Divergência:*</label>
+                    <select id="modal-motivo" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px;">
+                        <option value="">Selecione a raiz do problema...</option>
+                        <option value="Falta de NF ou CT-e">Falta de NF ou CT-e</option>
+                        <option value="PO Inexistente/Divergente">PO Inexistente ou Divergente</option>
+                        <option value="Carga Avariada / Quebrada">Carga Avariada / Quebrada</option>
+                        <option value="Veículo Inadequado para Carga">Veículo Inadequado para Carga</option>
+                        <option value="Falta de EPI do Motorista">Falta de EPI do Motorista</option>
+                        <option value="Motorista Bloqueado (GR)">Motorista Bloqueado (Gerenciadora)</option>
+                        <option value="Atraso do Fornecedor/Transporte">Atraso do Fornecedor/Transporte</option>
+                        <option value="Outros">Outros</option>
+                    </select>
+                </div>
+
+                <div class="form-row-col" style="margin-bottom:20px;">
+                    <label>Observações Adicionais:</label>
+                    <textarea id="modal-obs" rows="3" style="width:100%; padding:10px; background:#0B0E11; color:white; border:1px solid #444; border-radius:4px; resize:none;" placeholder="Descreva os detalhes da operação ou da anomalia..."></textarea>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="mark-btn action" onclick="closeStatusModal()">CANCELAR</button>
+                    <button class="mark-btn action apply" onclick="confirmStatusChange()">SALVAR STATUS</button>
+                </div>
+            </div>
         </div>
     `;
 }
 
-// Função para mudar o status logístico
-async function promptChangeStatus(id_doc, currentStatus) {
-    const list = "1: AGENDADO\n2: CHEGOU\n3: EM DESCARGA\n4: FINALIZADO\n5: ATRASADO\n6: NO SHOW";
-    const num = prompt(`STATUS ATUAL: ${currentStatus}\n\nDigite o número do novo status:\n${list}`);
+// Controles do Modal de Status
+function openStatusModal(id_doc, currentStatus) {
+    document.getElementById('modal-id-doc').value = id_doc;
+    document.getElementById('modal-status').value = currentStatus;
+    document.getElementById('modal-obs').value = "";
+    document.getElementById('modal-motivo').value = "";
     
-    if(!num) return; // Cancelou
+    toggleMotivoField(); // Verifica se precisa mostrar a aba de motivos
+    
+    document.getElementById('modal-backdrop').style.display = 'block';
+    document.getElementById('status-modal').style.display = 'block';
+}
 
-    const statusMap = {
-        "1": "AGENDADO", "2": "CHEGOU", "3": "EM DESCARGA", 
-        "4": "FINALIZADO", "5": "ATRASADO", "6": "NO SHOW"
-    };
+function closeStatusModal() {
+    document.getElementById('modal-backdrop').style.display = 'none';
+    document.getElementById('status-modal').style.display = 'none';
+}
 
-    const newStatus = statusMap[num];
-
-    if(!newStatus) {
-        notify("Opção inválida.", "error");
-        return;
-    }
-
-    let obs = "";
-    if(['ATRASADO', 'NO SHOW', 'CHEGOU'].includes(newStatus)) {
-        obs = prompt(`Deseja adicionar uma observação para ${newStatus}? (Opcional)`) || "";
-    }
-
-    const res = await StorageManager.updateAppointmentStatus(id_doc, newStatus, obs);
-    if(res.success) {
-        notify(`Status atualizado para ${newStatus}!`);
-        renderMonitor(document.getElementById('workspace')); // Recarrega a tela
+function toggleMotivoField() {
+    const status = document.getElementById('modal-status').value;
+    const divMotivo = document.getElementById('div-motivo');
+    // Se o status for crítico, mostra a caixa obrigatória de motivos
+    if (['ATRASADO', 'NO SHOW', 'DIVERGÊNCIA'].includes(status)) {
+        divMotivo.style.display = 'block';
     } else {
-        notify("Erro ao atualizar.", "error");
+        divMotivo.style.display = 'none';
+    }
+}
+
+async function confirmStatusChange() {
+    // O id_doc agora pode conter vários IDs separados por vírgula
+    const idsString = document.getElementById('modal-id-doc').value;
+    const newStatus = document.getElementById('modal-status').value;
+    const obs = document.getElementById('modal-obs').value.trim();
+    let motivo = "";
+
+    // Converte a string de volta para Array
+    const id_docs = idsString.split(',');
+
+    if (['ATRASADO', 'NO SHOW', 'DIVERGÊNCIA'].includes(newStatus)) {
+        motivo = document.getElementById('modal-motivo').value;
+        if (!motivo) {
+            notify("Atenção: É obrigatório selecionar o Motivo da Anomalia!", "error");
+            document.getElementById('modal-motivo').focus();
+            return;
+        }
+    }
+
+    // Chama a nova função que atualiza múltiplos documentos de uma vez
+    const res = await StorageManager.updateStatusBatch(id_docs, newStatus, obs, motivo);
+    
+    if(res.success) {
+        notify(`Status operacional atualizado!`);
+        closeStatusModal();
+        renderMonitor(document.getElementById('workspace')); // Atualiza a tabela
+    } else {
+        notify("Erro ao atualizar status.", "error");
     }
 }
 
