@@ -188,7 +188,6 @@ function loadPage(page, module) {
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
 }
 
-/* --- MÓDULO TRANSPORTADORA (RESTAURADO) --- */
 /* --- MÓDULO TRANSPORTADORA (UNIFICADO E INTEGRADO AO BANCO) --- */
 async function renderTransportadora(container) {
     if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
@@ -330,6 +329,28 @@ async function handleDeleteTransportadora(id_doc) {
     if (res.success) {
         notify("Excluída com sucesso.");
         renderTransportadora(document.getElementById('workspace'));
+    }
+}
+
+function validateDates() {
+    const sysDate = new Date(SYSTEM_DATE_STR);
+    const ids = ['val-rntrc', 'val-rctrc', 'val-rcdc', 'val-rcv'];
+    let expired = false;
+    
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (new Date(el.value) < sysDate) { el.classList.add('input-error'); expired = true; }
+        else { el.classList.remove('input-error'); }
+    });
+    
+    const status = document.getElementById('status-card');
+    if (status) {
+        if (expired) { 
+            status.innerText = "INATIVO"; status.className = "status-neon inactive"; 
+            notify("⚠️ ALERTA: Documentação Vencida!", "error"); 
+        }
+        else { status.innerText = "ATIVO"; status.className = "status-neon active"; }
     }
 }
 
@@ -703,5 +724,4 @@ function showBookingInfo(u,p,s,t) {
         }
     });
 }
-
 function clearData() { StorageManager.clearData(); }
