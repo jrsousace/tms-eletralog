@@ -1932,18 +1932,38 @@ async function updateLogPanel(date, location) {
     const allAppts = await StorageManager.getAppointments();
     const currentAppts = allAppts.filter(a => a.date===date && a.location===location).sort((a,b)=>a.time.localeCompare(b.time));
     
-    let html = `<h4 style="color:var(--eletra-aqua); margin-bottom:5px; border-bottom:1px solid #444; font-size:0.75rem;">Agenda Vigente (${date} - ${location})</h4>`;
+    // 1. LÓGICA DE AGRUPAMENTO
+    const groupedAppts = {};
+    currentAppts.forEach(a => {
+        const key = `${a.details.poMat}_${a.details.nf}_${a.location}`; 
+        if(!groupedAppts[key]) {
+            groupedAppts[key] = {
+                timeStart: a.time,
+                timeEnd: a.time,
+                details: a.details,
+                userName: a.userName
+            };
+        }
+        // Atualiza a janela de tempo
+        if (a.time < groupedAppts[key].timeStart) groupedAppts[key].timeStart = a.time;
+        if (a.time > groupedAppts[key].timeEnd) groupedAppts[key].timeEnd = a.time;
+    });
+
+    let html = `<h4 style="color:var(--eletra-aqua); margin-bottom:5px; border-bottom:1px solid #444; font-size:0.75rem;">Agenda Vigente (${date.split('-').reverse().join('/')} - ${location})</h4>`;
     
-    if (currentAppts.length === 0) { html += `<div style="font-style:italic; color:#777; font-size:0.7rem;">Vazio.</div>`; } 
+    const groupedValues = Object.values(groupedAppts);
+    if (groupedValues.length === 0) { html += `<div style="font-style:italic; color:#777; font-size:0.7rem;">Vazio.</div>`; } 
     else {
-        currentAppts.forEach(a => { 
-            const tipoDesc = a.details.tipoVeiculo ? ` | Veículo: ${a.details.tipoVeiculo}` : '';
-            html += `<div style="border-bottom:1px solid #333; padding:2px 0; font-size:0.7rem;"><strong style="color:#fff;">${a.time}</strong> | Sol: ${a.details.solicitante||'-'} | Comp: ${a.details.comprador||'-'}${tipoDesc} | <span style="color:#888;">Agendado: ${a.userName}</span></div>`; 
+        // 2. RENDERIZAÇÃO AGRUPADA
+        groupedValues.sort((a, b) => a.timeStart.localeCompare(b.timeStart)).forEach(g => { 
+            const timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+            const tipoDesc = g.details.tipoVeiculo ? ` | Veículo: ${g.details.tipoVeiculo}` : '';
+            html += `<div style="border-bottom:1px solid #333; padding:4px 0; font-size:0.75rem;"><strong style="color:#fff;">${timeWindow}</strong> | Sol: ${g.details.solicitante||'-'} | Comp: ${g.details.comprador||'-'}${tipoDesc} | <span style="color:#888;">Agendado: ${g.userName}</span></div>`; 
         });
     }
     
     const allLogs = await StorageManager.getLogs();
-    html += `<h4 style="color:var(--eletra-orange); margin-top:15px; margin-bottom:5px; border-top:1px solid #444; font-size:0.75rem;">Últimos Eventos</h4>`;
+    html += `<h4 style="color:var(--eletra-orange); margin-top:15px; margin-bottom:5px; border-top:1px solid #444; font-size:0.75rem;">Últimos Eventos do Sistema</h4>`;
     allLogs.forEach(l => {
         html += `<div style="border-bottom:1px solid #333; padding:2px 0; font-family:monospace; font-size:0.65rem;"><span style="color:#666;">[${new Date(l.timestamp).toLocaleString('pt-BR')}]</span> <span style="color:${l.action.includes('CANCEL')?'#FF3131':'#00D4FF'}">${l.action}</span> ${l.user}: ${l.details}</div>`;
     });
@@ -2208,16 +2228,34 @@ async function printDailySchedule() {
     const doca = appts.filter(a => a.location === 'Doca').sort((a,b)=>a.time.localeCompare(b.time));
     const portaria = appts.filter(a => a.location === 'Portaria').sort((a,b)=>a.time.localeCompare(b.time));
     
-    const generateRows = (list) => {
-        if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Vazio</td></tr>';
-        return list.map(a => {
-            const transpInfo = a.details.tipoVeiculo ? `${a.details.transp||'-'} (${a.details.tipoVeiculo})` : (a.details.transp||'-');
-            return `<tr><td>${a.time}</td><td>${transpInfo}</td><td>${a.details.ctrc||'-'}</td><td>${a.details.solicitante||'-'}</td><td>${a.details.comprador||'-'}</td><td>${a.userName}</td><td>PO:${a.details.poMat}</td></tr>`
+    // Função interna de Agrupamento para a Impressão
+    const generateGroupedRows = (list) => {
+        if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Nenhum agendamento</td></tr>';
+        
+        const grouped = {};
+        list.forEach(a => {
+            const key = `${a.details.poMat}_${a.details.nf}_${a.location}`;
+            if(!grouped[key]) {
+                grouped[key] = {
+                    timeStart: a.time,
+                    timeEnd: a.time,
+                    details: a.details,
+                    userName: a.userName
+                };
+            }
+            if (a.time < grouped[key].timeStart) grouped[key].timeStart = a.time;
+            if (a.time > grouped[key].timeEnd) grouped[key].timeEnd = a.time;
+        });
+        
+        return Object.values(grouped).sort((a, b) => a.timeStart.localeCompare(b.timeStart)).map(g => {
+            const timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+            const transpInfo = g.details.tipoVeiculo ? `${g.details.transp||'-'} (${g.details.tipoVeiculo})` : (g.details.transp||'-');
+            return `<tr><td style="white-space:nowrap;"><b>${timeWindow}</b></td><td>${transpInfo}</td><td>${g.details.ctrc||'-'}</td><td>${g.details.solicitante||'-'}</td><td>${g.details.comprador||'-'}</td><td>${g.userName}</td><td>PO: ${g.details.poMat} / NF: ${g.details.nf}</td></tr>`;
         }).join('');
     };
 
     const win = window.open('', '', 'height=800,width=950');
-    win.document.write(`<html><head><title>Agenda</title><style>body{font-family:Arial;font-size:11px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:5px}th{background:#eee}</style></head><body><h1>Agenda ${date.split('-').reverse().join('/')}</h1><h2>DOCA</h2><table><thead><tr><th>Hora</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(doca)}</tbody></table><h2>PORTARIA</h2><table><thead><tr><th>Hora</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(portaria)}</tbody></table></body></html>`);
+    win.document.write(`<html><head><title>Agenda EletraLog</title><style>body{font-family:Arial,sans-serif;font-size:12px}table{width:100%;border-collapse:collapse;margin-bottom:20px;}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#eee}</style></head><body><h1>Agenda EletraLog - ${date.split('-').reverse().join('/')}</h1><h2>DOCA</h2><table><thead><tr><th>Horário(s)</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solicitante</th><th>Comprador</th><th>Usuário Logado</th><th>Ref (PO / NF)</th></tr></thead><tbody>${generateGroupedRows(doca)}</tbody></table><h2>PORTARIA</h2><table><thead><tr><th>Horário(s)</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solicitante</th><th>Comprador</th><th>Usuário Logado</th><th>Ref (PO / NF)</th></tr></thead><tbody>${generateGroupedRows(portaria)}</tbody></table><p style="text-align:right; font-size:10px; color:#666;">Impresso em: ${new Date().toLocaleString('pt-BR')}</p></body></html>`);
     win.document.close();
     win.print();
 }
