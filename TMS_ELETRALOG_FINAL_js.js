@@ -26,6 +26,36 @@ function doLogout() {
 
 /* --- GERENCIADOR DE DADOS (FIREBASE - NUVEM) --- */
 const StorageManager = {
+    // --- MÓDULO EQUIPAMENTOS ---
+    getEquipamentos: async function() {
+        try {
+            const snapshot = await db.collection('equipamentos').get();
+            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
+        } catch (e) { return []; }
+    },
+    getEquipamentoById: async function(id) {
+        try {
+            const doc = await db.collection('equipamentos').doc(id).get();
+            return doc.exists ? { id_doc: doc.id, ...doc.data() } : null;
+        } catch (e) { return null; }
+    },
+    saveEquipamento: async function(equip) {
+        // Evita placas duplicadas
+        const check = await db.collection('equipamentos').where('placa', '==', equip.placa).get();
+        if (!check.empty) return { success: false, msg: "Placa já cadastrada no sistema." };
+        await db.collection('equipamentos').add(equip);
+        return { success: true };
+    },
+    updateEquipamento: async function(id, equip) {
+        try {
+            await db.collection('equipamentos').doc(id).update(equip);
+            return { success: true };
+        } catch(e) { return { success: false, msg: "Erro ao atualizar." }; }
+    },
+    deleteEquipamento: async function(id_doc) {
+        await db.collection('equipamentos').doc(id_doc).delete();
+        return { success: true };
+    },
     // Busca dados da coleção 'agendamentos'
     getAppointments: async function() {
         try {
@@ -203,6 +233,7 @@ function loadPage(page, module) {
     document.getElementById('view-breadcrumb').innerText = module + " > " + page;
 
     if (page === 'Transportadora') { renderTransportadora(workspace); }
+    else if (page === 'Equipamento') { renderEquipamento(workspace); }
     else if (page === 'Agendamentos') { renderAgendamentos(workspace); } 
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
@@ -370,6 +401,138 @@ async function handleSaveTransportadora() {
             notify(res.msg, "error");
         }
     }
+}
+
+/* --- MÓDULO EQUIPAMENTO --- */
+async function renderEquipamento(container) {
+    if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Sem permissão.</p></div>`;
+        return;
+    }
+
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando frota...</div>';
+    
+    const equips = await StorageManager.getEquipamentos();
+    
+    let rows = equips.map(e => `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px; font-weight:bold; color:var(--eletra-aqua);">${e.placa}</td>
+            <td>${e.tipo}</td>
+            <td>${e.modelo || '-'}</td>
+            <td>${e.capacidade ? e.capacidade + ' kg' : '-'}</td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditEquipamento('${e.id_doc}')"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteEquipamento('${e.id_doc}')"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+
+    if (equips.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhum equipamento cadastrado.</td></tr>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:500px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" id="tab-eq-geral" onclick="switchTab('eq-geral')">Dados do Veículo</button>
+                <button class="tab-btn" onclick="switchTab('eq-lista')" style="color:var(--eletra-orange)">Frota Cadastrada (${equips.length})</button>
+            </div>
+            
+            <div id="eq-geral" class="tab-content active" style="position:relative;">
+                <div id="eq-status-card" class="status-neon active">NOVO CADASTRO</div>
+                <input type="hidden" id="e-id-doc">
+
+                <div class="form-row"><label>Placa*:</label><input type="text" id="e-placa" placeholder="AAA-0000" oninput="this.value = this.value.toUpperCase()"></div>
+                
+                <div class="form-row"><label>Tipo de Veículo*:</label>
+                    <select id="e-tipo">
+                        <option value="">Selecione...</option>
+                        <option value="Moto">Moto</option>
+                        <option value="Passeio">Passeio</option>
+                        <option value="Caminhonete">Caminhonete</option>
+                        <option value="Pickup">Pickup</option>
+                        <option value="Utilitário">Utilitário</option>
+                        <option value="VUC">VUC</option>
+                        <option value="3/4">3/4</option>
+                        <option value="Toco">Toco</option>
+                        <option value="Truck">Truck</option>
+                        <option value="Carreta">Carreta</option>
+                        <option value="Container">Container</option>
+                    </select>
+                </div>
+
+                <div class="form-row"><label>Marca / Modelo:</label><input type="text" id="e-modelo" placeholder="Ex: Scania R450"></div>
+                <div class="form-row"><label>Capacidade (kg):</label><input type="number" id="e-cap" placeholder="Ex: 32000"></div>
+
+                <div class="props-footer" style="margin-top: 20px;">
+                    <button id="btn-save-eq" class="mark-btn action apply" onclick="handleSaveEquipamento()">SALVAR VEÍCULO</button>
+                    <button class="mark-btn action" onclick="renderEquipamento(document.getElementById('workspace'))">CANCELAR</button>
+                </div>
+            </div>
+
+            <div id="eq-lista" class="tab-content">
+                <table class="data-table">
+                    <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Capacidade</th><th>Ações</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+async function handleSaveEquipamento() {
+    const idDoc = document.getElementById('e-id-doc').value;
+    const placa = document.getElementById('e-placa').value.trim();
+    const tipo = document.getElementById('e-tipo').value;
+
+    if (!placa || !tipo) { notify("Placa e Tipo são obrigatórios.", "error"); return; }
+
+    const payload = {
+        placa: placa,
+        tipo: tipo,
+        modelo: document.getElementById('e-modelo').value.trim(),
+        capacidade: document.getElementById('e-cap').value.trim(),
+        user: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (idDoc) {
+        if (!confirm(`Atualizar veículo ${placa}?`)) return;
+        const res = await StorageManager.updateEquipamento(idDoc, payload);
+        if (res.success) { notify("Atualizado!"); renderEquipamento(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    } else {
+        if (!confirm(`Cadastrar veículo ${placa}?`)) return;
+        const res = await StorageManager.saveEquipamento(payload);
+        if (res.success) { notify("Cadastrado!"); renderEquipamento(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    }
+}
+/* --- MÓDULO EQUIPAMENTO --- */
+async function handleEditEquipamento(id) {
+    const e = await StorageManager.getEquipamentoById(id);
+    if (!e) return;
+
+    document.getElementById('e-id-doc').value = e.id_doc;
+    document.getElementById('e-placa').value = e.placa;
+    document.getElementById('e-tipo').value = e.tipo;
+    document.getElementById('e-modelo').value = e.modelo || '';
+    document.getElementById('e-cap').value = e.capacidade || '';
+
+    document.getElementById('eq-status-card').innerText = "EM EDIÇÃO";
+    document.getElementById('btn-save-eq').innerText = "ATUALIZAR";
+    
+    // Força a troca de aba manualmente pois os IDs mudaram
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('eq-geral').classList.add('active');
+    document.getElementById('tab-eq-geral').classList.add('active');
+
+    notify("Editando veículo.", "info");
+}
+
+async function handleDeleteEquipamento(id) {
+    if(!confirm("Excluir veículo?")) return;
+    await StorageManager.deleteEquipamento(id);
+    notify("Veículo excluído.");
+    renderEquipamento(document.getElementById('workspace'));
 }
 
 async function handleEditTransportadora(id) {
