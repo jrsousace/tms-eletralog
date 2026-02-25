@@ -70,10 +70,16 @@ const StorageManager = {
         } catch (e) { return null; }
     },
     saveCliente: async function(cliente) {
-        const check = await db.collection('clientes').where('documento', '==', cliente.documento).get();
-        if (!check.empty) return { success: false, msg: "CNPJ/CPF já cadastrado." };
+        // Verifica se já existe o mesmo CNPJ E o mesmo Apelido de Local
+        const check = await db.collection('clientes')
+            .where('documento', '==', cliente.documento)
+            .where('apelido', '==', cliente.apelido)
+            .get();
+            
+        if (!check.empty) return { success: false, msg: "Este Ponto de Entrega já está cadastrado para este CNPJ." };
+        
         await db.collection('clientes').add(cliente);
-        this.logAction("CADASTRO", `Novo Cliente: ${cliente.razao}`);
+        this.logAction("CADASTRO", `Novo Ponto de Entrega: ${cliente.apelido} (${cliente.razao})`);
         return { success: true };
     },
     updateCliente: async function(id, cliente) {
@@ -584,7 +590,10 @@ async function renderCliente(container) {
     let rows = clientes.map(c => `
         <tr style="border-bottom:1px solid #333;">
             <td style="padding:10px;">${c.documento}</td>
-            <td><strong>${c.razao}</strong><br><span style="font-size:0.7rem; color:#888;">${c.fantasia || ''}</span></td>
+            <td>
+                <strong>${c.razao}</strong><br>
+                <span style="font-size:0.75rem; color:var(--eletra-orange); font-weight:bold;">📍 ${c.apelido || 'Matriz'}</span>
+            </td>
             <td>${c.cidade || '-'} / ${c.uf || '-'}</td>
             <td><span style="font-size:0.75rem;">${c.contatoNome || '-'}<br>${c.contatoTel || '-'}</span></td>
             <td style="text-align:right;">
@@ -619,9 +628,10 @@ async function renderCliente(container) {
                             <input type="text" id="c-ie" placeholder="Ou ISENTO">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-top:10px;">
                         <div class="form-row-col"><label>Razão Social / Nome*</label><input type="text" id="c-razao"></div>
                         <div class="form-row-col"><label>Nome Fantasia</label><input type="text" id="c-fantasia"></div>
+                        <div class="form-row-col"><label style="color:var(--eletra-orange)">Apelido do Local*</label><input type="text" id="c-apelido" placeholder="Ex: CD Sul, Loja Centro"></div>
                     </div>
                 </fieldset>
 
@@ -745,8 +755,8 @@ async function handleSaveCliente() {
     const idDoc = document.getElementById('c-id-doc').value;
     const documento = document.getElementById('c-doc').value.replace(/\D/g, '');
     const razao = document.getElementById('c-razao').value.trim();
-
-    if (!documento || !razao) { notify("CNPJ/CPF e Razão Social são obrigatórios.", "error"); return; }
+    const apelido = document.getElementById('c-apelido').value.trim();
+    if (!documento || !razao || !apelido) { notify("CNPJ, Razão Social e Apelido do Local são obrigatórios.", "error"); return; }
 
     // Coleta todos os botões de veículos que estão marcados
     const veiculosAceitos = Array.from(document.querySelectorAll('.veic-btn.selected')).map(btn => btn.innerText);
@@ -755,6 +765,7 @@ async function handleSaveCliente() {
         documento: documento,
         ie: document.getElementById('c-ie').value.trim(),
         razao: razao,
+        apelido: apelido,
         fantasia: document.getElementById('c-fantasia').value.trim(),
         cep: document.getElementById('c-cep').value.trim(),
         rua: document.getElementById('c-rua').value.trim(),
@@ -773,7 +784,6 @@ async function handleSaveCliente() {
         dimensoes: document.getElementById('c-dimensoes').value.trim(),
         veiculosPermitidos: veiculosAceitos,
         obsLogistica: document.getElementById('c-obs-logistica').value.trim(),
-
         user: CURRENT_USER.name,
         timestamp: new Date().toISOString()
     };
@@ -799,6 +809,7 @@ async function handleEditCliente(id) {
     document.getElementById('c-ie').value = c.ie || '';
     document.getElementById('c-razao').value = c.razao;
     document.getElementById('c-fantasia').value = c.fantasia || '';
+    document.getElementById('c-apelido').value = c.apelido || '';
     document.getElementById('c-cep').value = c.cep || '';
     document.getElementById('c-rua').value = c.rua || '';
     document.getElementById('c-num').value = c.numero || '';
@@ -1042,6 +1053,283 @@ async function handleDeleteTransportadora(id_doc) {
         notify("Transportadora excluída.");
         renderTransportadora(document.getElementById('workspace'));
     }
+}
+
+/* --- MÓDULO CLIENTE (CRUD COMPLETO E MATRIZ LOGÍSTICA) --- */
+async function renderCliente(container) {
+    if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Sem permissão.</p></div>`;
+        return;
+    }
+
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando clientes...</div>';
+    
+    const clientes = await StorageManager.getClientes();
+    
+    let rows = clientes.map(c => `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px;">${c.documento}</td>
+            <td>
+                <strong>${c.razao}</strong><br>
+                <span style="font-size:0.75rem; color:var(--eletra-orange); font-weight:bold;">📍 ${c.apelido || 'Matriz'}</span>
+            </td>
+            <td>${c.cidade || '-'} / ${c.uf || '-'}</td>
+            <td><span style="font-size:0.75rem;">${c.contatoNome || '-'}<br>${c.contatoTel || '-'}</span></td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditCliente('${c.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteCliente('${c.id_doc}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+
+    if (clientes.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhum cliente cadastrado.</td></tr>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" id="tab-cli-geral" onclick="switchTab('cli-geral')">Ficha do Cliente</button>
+                <button class="tab-btn" onclick="switchTab('cli-lista')" style="color:var(--eletra-orange)">Base Cadastrada (${clientes.length})</button>
+            </div>
+            
+            <div id="cli-geral" class="tab-content active" style="position:relative;">
+                <div id="cli-status-card" class="status-neon active">NOVO CADASTRO</div>
+                <input type="hidden" id="c-id-doc">
+
+                <fieldset class="prop-group">
+                    <legend>DADOS FISCAIS</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>CNPJ / CPF*</label>
+                            <input type="text" id="c-doc" placeholder="Apenas números">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Inscrição Estadual (IE)</label>
+                            <input type="text" id="c-ie" placeholder="Ou ISENTO">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label>Razão Social / Nome*</label><input type="text" id="c-razao"></div>
+                        <div class="form-row-col"><label>Nome Fantasia</label><input type="text" id="c-fantasia"></div>
+                        <div class="form-row-col"><label style="color:var(--eletra-orange)">Apelido do Local*</label><input type="text" id="c-apelido" placeholder="Ex: CD Sul, Loja Centro"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>ENDEREÇO DE ENTREGA</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>CEP <i class="fa-solid fa-magnifying-glass" style="color:var(--eletra-aqua); cursor:pointer;" onclick="buscaCepCliente()"></i></label>
+                            <input type="text" id="c-cep" placeholder="00000-000" onblur="buscaCepCliente()">
+                        </div>
+                        <div class="form-row-col"><label>Logradouro (Rua/Av)*</label><input type="text" id="c-rua"></div>
+                        <div class="form-row-col"><label>Número*</label><input type="text" id="c-num"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                         <div class="form-row-col" style="grid-column: span 2;"><label>Complemento</label><input type="text" id="c-comp" placeholder="Galpão, Sala..."></div>
+                         <div class="form-row-col"><label>Bairro*</label><input type="text" id="c-bairro"></div>
+                         <div class="form-row-col"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label>Cidade*</label><input type="text" id="c-cidade"></div>
+                        <div class="form-row-col"><label>UF*</label><input type="text" id="c-uf" maxlength="2" placeholder="Ex: SP" oninput="this.value = this.value.toUpperCase()"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>CONTATO OPERACIONAL</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col"><label>Nome Contato</label><input type="text" id="c-contato-nome" placeholder="Responsável Recebimento"></div>
+                        <div class="form-row-col"><label>Telefone / Whats</label><input type="text" id="c-contato-tel" placeholder="(11) 90000-0000"></div>
+                        <div class="form-row-col"><label>E-mail</label><input type="email" id="c-contato-email" placeholder="email@cliente.com"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>REGRAS DE RECEBIMENTO & AGENDAMENTO (MATRIZ LOGÍSTICA)</legend>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div class="form-row-col">
+                            <label>Horário de Func.</label>
+                            <input type="text" id="c-horario" placeholder="Ex: 08:00 às 16:00">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Método de Agend.</label>
+                            <select id="c-metodo-agendamento">
+                                <option value="">Selecione...</option>
+                                <option value="E-MAIL">E-mail</option>
+                                <option value="PORTAL">Portal B2B</option>
+                                <option value="TELEFONE">Telefone</option>
+                                <option value="ORDEM DE CHEGADA">Ordem de Chegada</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Permite Sobreposição?</label>
+                            <select id="c-sobreposicao">
+                                <option value="SIM">SIM</option>
+                                <option value="NÃO">NÃO</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Dimensões Max (CxLxA)</label>
+                            <input type="text" id="c-dimensoes" placeholder="Ex: 1000X1200X970">
+                        </div>
+                    </div>
+
+                    <div class="form-row-col">
+                        <label style="color:var(--eletra-orange)">Tipos de Veículos Aceitos (Clique para selecionar)</label>
+                        <div class="marking-group">
+                            <button class="mark-btn veic-btn" onclick="this.classList.toggle('selected')">CARRETA BAÚ</button>
+                            <button class="mark-btn veic-btn" onclick="this.classList.toggle('selected')">CARRETA SIDER</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">TRUCK</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">TOCO</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">VUC / 3/4</button>
+                            <button class="mark-btn veic-btn selected" onclick="this.classList.toggle('selected')">UTILITÁRIO</button>
+                        </div>
+                    </div>
+
+                    <div class="form-row-col" style="margin-top:10px;">
+                        <label>Observações / Exceções de Entrega</label>
+                        <input type="text" id="c-obs-logistica" placeholder="Ex: Sobreposição permitida com altura máxima de 1,4 metros...">
+                    </div>
+                </fieldset>
+
+                <div class="props-footer" style="margin-top: 20px;">
+                    <button id="btn-save-cli" class="mark-btn action apply" onclick="handleSaveCliente()">SALVAR CLIENTE</button>
+                    <button class="mark-btn action" onclick="renderCliente(document.getElementById('workspace'))">CANCELAR</button>
+                </div>
+            </div>
+
+            <div id="cli-lista" class="tab-content">
+                <table class="data-table">
+                    <thead><tr><th>CNPJ/CPF</th><th>Cliente</th><th>Localidade</th><th>Contato</th><th>Ações</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+// Consumo de API Externa (ViaCEP) para facilitar cadastro
+async function buscaCepCliente() {
+    let cep = document.getElementById('c-cep').value.replace(/\D/g, '');
+    if (cep.length === 8) {
+        try {
+            let response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+            let data = await response.json();
+            if (!data.erro) {
+                document.getElementById('c-rua').value = data.logradouro;
+                document.getElementById('c-bairro').value = data.bairro;
+                document.getElementById('c-cidade').value = data.localidade;
+                document.getElementById('c-uf').value = data.uf;
+                document.getElementById('c-num').focus();
+            } else {
+                notify("CEP não encontrado.", "error");
+            }
+        } catch(e) {
+            console.error(e);
+        }
+    }
+}
+
+async function handleSaveCliente() {
+    const idDoc = document.getElementById('c-id-doc').value;
+    const documento = document.getElementById('c-doc').value.replace(/\D/g, '');
+    const razao = document.getElementById('c-razao').value.trim();
+    const apelido = document.getElementById('c-apelido').value.trim();
+    
+    if (!documento || !razao || !apelido) { notify("CNPJ, Razão Social e Apelido do Local são obrigatórios.", "error"); return; }
+
+    const veiculosAceitos = Array.from(document.querySelectorAll('.veic-btn.selected')).map(btn => btn.innerText);
+
+    const payload = {
+        documento: documento,
+        ie: document.getElementById('c-ie').value.trim(),
+        razao: razao,
+        apelido: apelido,
+        fantasia: document.getElementById('c-fantasia').value.trim(),
+        cep: document.getElementById('c-cep').value.trim(),
+        rua: document.getElementById('c-rua').value.trim(),
+        numero: document.getElementById('c-num').value.trim(),
+        complemento: document.getElementById('c-comp').value.trim(),
+        bairro: document.getElementById('c-bairro').value.trim(),
+        cidade: document.getElementById('c-cidade').value.trim(),
+        uf: document.getElementById('c-uf').value.toUpperCase(),
+        contatoNome: document.getElementById('c-contato-nome').value.trim(),
+        contatoTel: document.getElementById('c-contato-tel').value.trim(),
+        contatoEmail: document.getElementById('c-contato-email').value.trim(),
+        horarioRecebimento: document.getElementById('c-horario').value.trim(),
+        metodoAgendamento: document.getElementById('c-metodo-agendamento').value,
+        sobreposicao: document.getElementById('c-sobreposicao').value,
+        dimensoes: document.getElementById('c-dimensoes').value.trim(),
+        veiculosPermitidos: veiculosAceitos,
+        obsLogistica: document.getElementById('c-obs-logistica').value.trim(),
+        user: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (idDoc) {
+        if (!confirm(`Atualizar cadastro de ${razao}?`)) return;
+        const res = await StorageManager.updateCliente(idDoc, payload);
+        if (res.success) { notify("Cliente atualizado!"); renderCliente(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    } else {
+        if (!confirm(`Cadastrar o cliente ${razao}?`)) return;
+        const res = await StorageManager.saveCliente(payload);
+        if (res.success) { notify("Cliente cadastrado!"); renderCliente(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    }
+}
+
+async function handleEditCliente(id) {
+    const c = await StorageManager.getClienteById(id);
+    if (!c) return;
+
+    document.getElementById('c-id-doc').value = c.id_doc;
+    document.getElementById('c-doc').value = c.documento;
+    document.getElementById('c-ie').value = c.ie || '';
+    document.getElementById('c-razao').value = c.razao;
+    document.getElementById('c-fantasia').value = c.fantasia || '';
+    document.getElementById('c-apelido').value = c.apelido || '';
+    document.getElementById('c-cep').value = c.cep || '';
+    document.getElementById('c-rua').value = c.rua || '';
+    document.getElementById('c-num').value = c.numero || '';
+    document.getElementById('c-comp').value = c.complemento || '';
+    document.getElementById('c-bairro').value = c.bairro || '';
+    document.getElementById('c-cidade').value = c.cidade || '';
+    document.getElementById('c-uf').value = c.uf || '';
+    document.getElementById('c-contato-nome').value = c.contatoNome || '';
+    document.getElementById('c-contato-tel').value = c.contatoTel || '';
+    document.getElementById('c-contato-email').value = c.contatoEmail || '';
+
+    document.getElementById('c-horario').value = c.horarioRecebimento || '';
+    document.getElementById('c-metodo-agendamento').value = c.metodoAgendamento || '';
+    document.getElementById('c-sobreposicao').value = c.sobreposicao || 'SIM';
+    document.getElementById('c-dimensoes').value = c.dimensoes || '';
+    document.getElementById('c-obs-logistica').value = c.obsLogistica || '';
+
+    document.querySelectorAll('.veic-btn').forEach(btn => {
+        if (c.veiculosPermitidos && c.veiculosPermitidos.includes(btn.innerText)) {
+            btn.classList.add('selected');
+        } else {
+            btn.classList.remove('selected');
+        }
+    });
+
+    document.getElementById('cli-status-card').innerText = "EM EDIÇÃO";
+    document.getElementById('cli-status-card').className = "status-neon active";
+    document.getElementById('btn-save-cli').innerText = "ATUALIZAR DADOS";
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('cli-geral').classList.add('active');
+    document.getElementById('tab-cli-geral').classList.add('active');
+
+    notify(`Editando ${c.razao}`, "info");
+}
+
+async function handleDeleteCliente(id) {
+    if(!confirm("Tem certeza que deseja apagar este cliente?")) return;
+    await StorageManager.deleteCliente(id);
+    notify("Cliente apagado com sucesso.");
+    renderCliente(document.getElementById('workspace'));
 }
 
 /* --- AGENDAMENTOS (LÓGICA ASSÍNCRONA) --- */
