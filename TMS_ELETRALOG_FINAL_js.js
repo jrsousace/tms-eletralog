@@ -148,6 +148,21 @@ const StorageManager = {
         return { success: true };
     },
 
+    // Atualiza o Status Logístico do Agendamento (Monitor)
+    updateAppointmentStatus: async function(id_doc, newStatus, obs) {
+        try {
+            await db.collection('agendamentos').doc(id_doc).update({
+                status: newStatus,
+                statusObs: obs,
+                statusUpdatedAt: new Date().toISOString()
+            });
+            this.logAction("MONITOR", `Status alterado p/ ${newStatus} (Agendamento ID: ${id_doc})`);
+            return { success: true };
+        } catch(e) { 
+            return { success: false, msg: "Erro ao atualizar status logístico." }; 
+        }
+    },
+
     saveUser: async function(newUser) {
         const check = await db.collection('usuarios').where('user', '==', newUser.user).get();
         if (!check.empty) return { success: false, msg: "Login já existe." };
@@ -301,7 +316,8 @@ function loadPage(page, module) {
     else if (page === 'Equipamento') { renderEquipamento(workspace); }
     else if (page === 'Cliente') { renderCliente(workspace); }
     else if (page === 'Motorista') { renderMotorista(workspace); }
-    else if (page === 'Agendamentos') { renderAgendamentos(workspace); } 
+    else if (page === 'Agendamentos') { renderAgendamentos(workspace); }
+    else if (page === 'Monitor') { renderMonitor(workspace); }
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
@@ -1903,6 +1919,126 @@ async function updateLogPanel(date, location) {
         html += `<div style="border-bottom:1px solid #333; padding:2px 0; font-family:monospace; font-size:0.65rem;"><span style="color:#666;">[${new Date(l.timestamp).toLocaleString('pt-BR')}]</span> <span style="color:${l.action.includes('CANCEL')?'#FF3131':'#00D4FF'}">${l.action}</span> ${l.user}: ${l.details}</div>`;
     });
     div.innerHTML = html;
+}
+
+/* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
+async function renderMonitor(container) {
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando Torre de Controle...</div>';
+
+    // Pega a data selecionada ou usa a data de hoje como padrão
+    const filterDate = document.getElementById('monitor-date') ? document.getElementById('monitor-date').value : SYSTEM_DATE_STR;
+
+    const allAppts = await StorageManager.getAppointments();
+    const dailyAppts = allAppts.filter(a => a.date === filterDate).sort((a, b) => a.time.localeCompare(b.time));
+
+    // Variáveis para os KPIs (Indicadores)
+    let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
+
+    let rows = dailyAppts.map(a => {
+        // Se não tiver status, o padrão é AGENDADO
+        let status = a.status || 'AGENDADO';
+        let statusColor = '#aaa';
+
+        // Lógica de Cores e Contagem
+        if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
+        else if (status === 'CHEGOU' || status === 'EM DESCARGA') { countPatio++; statusColor = 'var(--eletra-orange)'; }
+        else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
+        else if (status === 'ATRASADO' || status === 'NO SHOW') { countOcorrencia++; statusColor = '#FF3131'; }
+
+        return `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px; font-weight:bold; color:var(--eletra-aqua); font-size:1.1rem;">${a.time}</td>
+            <td>
+                <span style="font-weight:bold;">${a.details.transp || 'Não Informada'}</span><br>
+                <span style="font-size:0.7rem; color:#888;">Veículo: ${a.details.tipoVeiculo || '-'}</span>
+            </td>
+            <td>
+                PO: ${a.details.poMat}<br>
+                <span style="font-size:0.7rem; color:#888;">NF: ${a.details.nf}</span>
+            </td>
+            <td>${a.location}</td>
+            <td>
+                <span style="border: 1px solid ${statusColor}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">
+                    ${status}
+                </span>
+                ${a.statusObs ? `<br><span style="font-size:0.65rem; color:#888; margin-top:4px; display:block;">Obs: ${a.statusObs}</span>` : ''}
+            </td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px;" onclick="promptChangeStatus('${a.id_doc}', '${status}')" title="Atualizar Status"><i class="fa-solid fa-truck-ramp-box"></i> ATUALIZAR</button>
+            </td>
+        </tr>
+        `;
+    }).join('');
+
+    if (dailyAppts.length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhum veículo agendado para esta data.</td></tr>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" onclick="switchTab('mon-inbound')">Monitor Inbound</button>
+                <button class="tab-btn" onclick="switchTab('mon-outbound')">Monitor Outbound</button>
+            </div>
+
+            <div id="mon-inbound" class="tab-content active">
+                
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color);">
+                    <div>
+                        <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
+                        <input type="date" id="monitor-date" value="${filterDate}" onchange="renderMonitor(document.getElementById('workspace'))" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
+                        <button class="mark-btn" style="margin-left:10px;" onclick="renderMonitor(document.getElementById('workspace'))"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
+                    </div>
+                    <div style="display:flex; gap:25px;">
+                        <div style="text-align:center;"><div style="font-size:1.4rem; font-weight:bold; color:var(--eletra-aqua);">${countAgendado}</div><div style="font-size:0.65rem; color:#888;">AGENDADOS</div></div>
+                        <div style="text-align:center;"><div style="font-size:1.4rem; font-weight:bold; color:var(--eletra-orange);">${countPatio}</div><div style="font-size:0.65rem; color:#888;">NO PÁTIO</div></div>
+                        <div style="text-align:center;"><div style="font-size:1.4rem; font-weight:bold; color:#39FF14;">${countFim}</div><div style="font-size:0.65rem; color:#888;">FINALIZADOS</div></div>
+                        <div style="text-align:center;"><div style="font-size:1.4rem; font-weight:bold; color:#FF3131;">${countOcorrencia}</div><div style="font-size:0.65rem; color:#888;">OCORRÊNCIAS</div></div>
+                    </div>
+                </div>
+
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Hora</th><th>Transportadora / Veículo</th><th>Documentos</th><th>Local</th><th>Status Operacional</th><th>Ação</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="mon-outbound" class="tab-content"><p style="padding:40px; text-align:center;">Monitoramento Outbound em construção.</p></div>
+        </div>
+    `;
+}
+
+// Função para mudar o status logístico
+async function promptChangeStatus(id_doc, currentStatus) {
+    const list = "1: AGENDADO\n2: CHEGOU\n3: EM DESCARGA\n4: FINALIZADO\n5: ATRASADO\n6: NO SHOW";
+    const num = prompt(`STATUS ATUAL: ${currentStatus}\n\nDigite o número do novo status:\n${list}`);
+    
+    if(!num) return; // Cancelou
+
+    const statusMap = {
+        "1": "AGENDADO", "2": "CHEGOU", "3": "EM DESCARGA", 
+        "4": "FINALIZADO", "5": "ATRASADO", "6": "NO SHOW"
+    };
+
+    const newStatus = statusMap[num];
+
+    if(!newStatus) {
+        notify("Opção inválida.", "error");
+        return;
+    }
+
+    let obs = "";
+    if(['ATRASADO', 'NO SHOW', 'CHEGOU'].includes(newStatus)) {
+        obs = prompt(`Deseja adicionar uma observação para ${newStatus}? (Opcional)`) || "";
+    }
+
+    const res = await StorageManager.updateAppointmentStatus(id_doc, newStatus, obs);
+    if(res.success) {
+        notify(`Status atualizado para ${newStatus}!`);
+        renderMonitor(document.getElementById('workspace')); // Recarrega a tela
+    } else {
+        notify("Erro ao atualizar.", "error");
+    }
 }
 
 // Funções de BI
