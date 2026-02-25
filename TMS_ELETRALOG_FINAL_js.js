@@ -460,8 +460,8 @@ async function renderEquipamento(container) {
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
-                         <div class="form-row-col" style="grid-column: span 3;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                         <div class="form-row-col">
                             <label>Tipo de Veículo*</label>
                             <select id="e-tipo" onchange="checkReboqueRequirement()">
                                 <option value="">Selecione a categoria...</option>
@@ -478,6 +478,18 @@ async function renderEquipamento(container) {
                                 <option value="Carreta">Carreta (5 eixos ou mais)</option>
                             </select>
                         </div>
+                        <div class="form-row-col">
+                            <label>Tipo de Carroceria*</label>
+                            <select id="e-carroceria">
+                                <option value="">Selecione...</option>
+                                <option value="Baú">Baú</option>
+                                <option value="Sider">Sider</option>
+                                <option value="Grade Baixa">Grade Baixa (Carga Seca)</option>
+                                <option value="Prancha">Prancha</option>
+                                <option value="Refrigerado">Refrigerado</option>
+                                <option value="Não se aplica">Não se aplica</option>
+                            </select>
+                        </div>
                     </div>
                     
                      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
@@ -489,34 +501,24 @@ async function renderEquipamento(container) {
                 </fieldset>
 
                 <fieldset class="prop-group">
-                    <legend>PROPRIETÁRIO (CONFORME CRLV)</legend>
+                    <legend>PROPRIETÁRIO & DOCUMENTAÇÃO (CRLV)</legend>
                     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
-                        <div class="form-row-col">
-                            <label>Nome do Proprietário*</label>
-                            <input type="text" id="e-proprietario" placeholder="Nome exato do documento">
-                        </div>
-                        <div class="form-row-col">
-                            <label>CPF ou CNPJ*</label>
-                            <input type="text" id="e-doc-prop" placeholder="Somente números">
-                        </div>
+                        <div class="form-row-col"><label>Nome do Proprietário*</label><input type="text" id="e-proprietario" placeholder="Nome exato do documento"></div>
+                        <div class="form-row-col"><label>CPF ou CNPJ*</label><input type="text" id="e-doc-prop" placeholder="Somente números"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label style="color:var(--eletra-orange)">RENAVAM*</label><input type="text" id="e-renavam" placeholder="Número do Renavam"></div>
+                        <div class="form-row-col"><label>RNTRC do Proprietário</label><input type="text" id="e-rntrc-prop" placeholder="Registro ANTT"></div>
                     </div>
                 </fieldset>
 
                 <fieldset class="prop-group">
                     <legend>CAPACIDADE DE CARGA</legend>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                        <div class="form-row-col">
-                            <label>PBT (kg)</label>
-                            <input type="number" id="e-pbt" placeholder="Ex: 45000" oninput="calcCapacidade()">
-                        </div>
-                        <div class="form-row-col">
-                            <label>Tara (kg)</label>
-                            <input type="number" id="e-tara" placeholder="Ex: 15000" oninput="calcCapacidade()">
-                        </div>
-                        <div class="form-row-col">
-                            <label style="color:var(--eletra-orange)">Lotação Líquida (kg)</label>
-                            <input type="number" id="e-cap" readonly style="background:#222; font-weight:bold; color:var(--eletra-orange);">
-                        </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col"><label>PBT (kg)</label><input type="number" id="e-pbt" placeholder="Ex: 45000" oninput="calcCapacidade()"></div>
+                        <div class="form-row-col"><label>Tara (kg)</label><input type="number" id="e-tara" placeholder="Ex: 15000" oninput="calcCapacidade()"></div>
+                        <div class="form-row-col"><label style="color:var(--eletra-orange)">Lotação (kg)</label><input type="number" id="e-cap" readonly style="background:#222; font-weight:bold; color:var(--eletra-orange);"></div>
+                        <div class="form-row-col"><label>Cubagem (m³)</label><input type="number" id="e-cubagem" placeholder="Ex: 110"></div>
                     </div>
                 </fieldset>
 
@@ -583,12 +585,13 @@ async function handleSaveEquipamento() {
     const idDoc = document.getElementById('e-id-doc').value;
     const placa = document.getElementById('e-placa').value.trim();
     const tipo = document.getElementById('e-tipo').value;
+    const carroceria = document.getElementById('e-carroceria').value;
     const placasReb = document.getElementById('e-placas-reboque').value.trim();
     const prop = document.getElementById('e-proprietario').value.trim();
     const docProp = document.getElementById('e-doc-prop').value.trim();
 
-    if (!placa || !tipo || !prop || !docProp) { 
-        notify("Placa, Tipo e Dados do Proprietário são obrigatórios.", "error"); 
+    if (!placa || !tipo || !prop || !docProp || !document.getElementById('e-renavam').value.trim()) { 
+        notify("Placa, Tipo, Proprietário, Doc e Renavam são obrigatórios.", "error"); 
         return; 
     }
 
@@ -603,15 +606,19 @@ async function handleSaveEquipamento() {
         placa: placa,
         placasReboque: placasReb,
         tipo: tipo,
+        carroceria: carroceria, // NOVO
         marca: document.getElementById('e-marca').value.trim(),
         modelo: document.getElementById('e-modelo').value.trim(),
         anoFab: document.getElementById('e-ano-fab').value.trim(),
         anoMod: document.getElementById('e-ano-mod').value.trim(),
         proprietario: prop,
         docProprietario: docProp,
+        renavam: document.getElementById('e-renavam').value.trim(), // NOVO
+        rntrcProp: document.getElementById('e-rntrc-prop').value.trim(), // NOVO
         pbt: document.getElementById('e-pbt').value.trim(),
         tara: document.getElementById('e-tara').value.trim(),
         capacidade: document.getElementById('e-cap').value.trim(),
+        cubagem: document.getElementById('e-cubagem').value.trim(), // NOVO
         user: CURRENT_USER.name,
         timestamp: new Date().toISOString()
     };
@@ -637,19 +644,19 @@ async function handleEditEquipamento(id) {
     document.getElementById('e-placa').value = e.placa;
     document.getElementById('e-placas-reboque').value = e.placasReboque || '';
     document.getElementById('e-tipo').value = e.tipo;
-    
+    document.getElementById('e-carroceria').value = e.carroceria || '';
     document.getElementById('e-marca').value = e.marca || '';
     document.getElementById('e-modelo').value = e.modelo || '';
     document.getElementById('e-ano-fab').value = e.anoFab || '';
     document.getElementById('e-ano-mod').value = e.anoMod || '';
-    
     document.getElementById('e-proprietario').value = e.proprietario || '';
     document.getElementById('e-doc-prop').value = e.docProprietario || '';
-    
+    document.getElementById('e-renavam').value = e.renavam || '';
+    document.getElementById('e-rntrc-prop').value = e.rntrcProp || '';
     document.getElementById('e-pbt').value = e.pbt || '';
     document.getElementById('e-tara').value = e.tara || '';
     document.getElementById('e-cap').value = e.capacidade || '';
-
+document.getElementById('e-cubagem').value = e.cubagem || '';
     document.getElementById('eq-status-card').innerText = "EM EDIÇÃO";
     document.getElementById('eq-status-card').className = "status-neon active";
     document.getElementById('btn-save-eq').innerText = "ATUALIZAR DADOS";
