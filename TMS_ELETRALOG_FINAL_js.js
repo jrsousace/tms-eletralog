@@ -103,7 +103,6 @@ const StorageManager = {
             return [];
         }
     },
-
     // Busca dados da coleção 'logs'
     getLogs: async function() {
         try {
@@ -111,7 +110,6 @@ const StorageManager = {
             return snapshot.docs.map(doc => doc.data());
         } catch (e) { return []; }
     },
-
     // Busca usuários
     getUsers: async function() {
         try {
@@ -119,7 +117,6 @@ const StorageManager = {
             return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
         } catch (e) { return []; }
     },
-
     saveAppointments: async function(newAppts) {
         const batch = db.batch(); 
         newAppts.forEach(appt => {
@@ -128,7 +125,6 @@ const StorageManager = {
         });
         await batch.commit();
     },
-
     cancelAppointment: async function(date, time, location) {
         const snapshot = await db.collection('agendamentos')
             .where('date', '==', date)
@@ -167,6 +163,38 @@ const StorageManager = {
         if (doc.data().role === 'MASTER') return { success: false, msg: "Não pode excluir Master." };
         
         await db.collection('usuarios').doc(doc.id).delete();
+        return { success: true };
+    },
+
+    // --- MÓDULO MOTORISTAS ---
+    getMotoristas: async function() {
+        try {
+            const snapshot = await db.collection('motoristas').get();
+            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
+        } catch (e) { return []; }
+    },
+    getMotoristaById: async function(id) {
+        try {
+            const doc = await db.collection('motoristas').doc(id).get();
+            return doc.exists ? { id_doc: doc.id, ...doc.data() } : null;
+        } catch (e) { return null; }
+    },
+    saveMotorista: async function(motorista) {
+        const check = await db.collection('motoristas').where('cpf', '==', motorista.cpf).get();
+        if (!check.empty) return { success: false, msg: "CPF já cadastrado na base." };
+        await db.collection('motoristas').add(motorista);
+        this.logAction("CADASTRO", `Novo Motorista: ${motorista.nome}`);
+        return { success: true };
+    },
+    updateMotorista: async function(id, motorista) {
+        try {
+            await db.collection('motoristas').doc(id).update(motorista);
+            this.logAction("EDIÇÃO", `Motorista atualizado: ${motorista.nome}`);
+            return { success: true };
+        } catch(e) { return { success: false, msg: "Erro ao atualizar motorista." }; }
+    },
+    deleteMotorista: async function(id_doc) {
+        await db.collection('motoristas').doc(id_doc).delete();
         return { success: true };
     },
 
@@ -272,6 +300,7 @@ function loadPage(page, module) {
     if (page === 'Transportadora') { renderTransportadora(workspace); }
     else if (page === 'Equipamento') { renderEquipamento(workspace); }
     else if (page === 'Cliente') { renderCliente(workspace); }
+    else if (page === 'Motorista') { renderMotorista(workspace); }
     else if (page === 'Agendamentos') { renderAgendamentos(workspace); } 
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
@@ -1299,7 +1328,6 @@ async function handleEditCliente(id) {
     document.getElementById('c-contato-nome').value = c.contatoNome || '';
     document.getElementById('c-contato-tel').value = c.contatoTel || '';
     document.getElementById('c-contato-email').value = c.contatoEmail || '';
-
     document.getElementById('c-horario').value = c.horarioRecebimento || '';
     document.getElementById('c-metodo-agendamento').value = c.metodoAgendamento || '';
     document.getElementById('c-sobreposicao').value = c.sobreposicao || 'SIM';
@@ -1331,7 +1359,249 @@ async function handleDeleteCliente(id) {
     notify("Cliente apagado com sucesso.");
     renderCliente(document.getElementById('workspace'));
 }
+/* --- MÓDULO MOTORISTA (GERENCIAMENTO DE RISCO & CNH) --- */
+async function renderMotorista(container) {
+    if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Sem permissão.</p></div>`;
+        return;
+    }
 
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando motoristas...</div>';
+    
+    // Busca motoristas e transportadoras (para vincular um motorista à transportadora padrão, se houver)
+    const [motoristas, transps] = await Promise.all([
+        StorageManager.getMotoristas(),
+        StorageManager.getTransportadoras()
+    ]);
+
+    const transpOptions = transps.map(t => `<option value="${t.razao}">${t.razao}</option>`).join('');
+    const sysDate = new Date(SYSTEM_DATE_STR);
+
+    let rows = motoristas.map(m => {
+        let isCnhVencida = new Date(m.cnhValidade) < sysDate;
+        let cnhColor = isCnhVencida ? '#FF3131' : '#aaa';
+        let grColor = m.statusGR === 'LIBERADO' ? '#39FF14' : (m.statusGR === 'BLOQUEADO' ? '#FF3131' : '#FF8200');
+
+        return `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px;">${m.cpf}</td>
+            <td>
+                <strong style="color:var(--eletra-aqua);">${m.nome}</strong><br>
+                <span style="font-size:0.7rem; color:#888;">${m.telefone || '-'}</span>
+            </td>
+            <td>
+                CNH: ${m.cnh} (Cat: <strong>${m.cnhCategoria}</strong>)<br>
+                <span style="font-size:0.7rem; color:${cnhColor}; font-weight:bold;">Validade: ${m.cnhValidade}</span>
+            </td>
+            <td>
+                <span style="font-size:0.7rem; font-weight:bold; color:${grColor}; border:1px solid ${grColor}; padding:2px 5px; border-radius:3px;">${m.statusGR || 'PENDENTE'}</span>
+                <br><span style="font-size:0.65rem; color:#888;">${m.transportadora || 'Spot / Autônomo'}</span>
+            </td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditMotorista('${m.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteMotorista('${m.id_doc}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `}).join('');
+
+    if (motoristas.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhum motorista cadastrado.</td></tr>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" id="tab-mot-geral" onclick="switchTab('mot-geral')">Ficha do Motorista</button>
+                <button class="tab-btn" onclick="switchTab('mot-lista')" style="color:var(--eletra-orange)">Banco de Motoristas (${motoristas.length})</button>
+            </div>
+            
+            <div id="mot-geral" class="tab-content active" style="position:relative;">
+                <div id="mot-status-card" class="status-neon active">NOVO CADASTRO</div>
+                <input type="hidden" id="m-id-doc">
+
+                <fieldset class="prop-group">
+                    <legend>DADOS PESSOAIS</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>CPF*</label>
+                            <input type="text" id="m-cpf" placeholder="Apenas números">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Nome Completo*</label>
+                            <input type="text" id="m-nome" placeholder="Nome igual à CNH">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label>RG</label><input type="text" id="m-rg" placeholder="Número do RG"></div>
+                        <div class="form-row-col"><label>Data de Nascimento</label><input type="date" id="m-nascimento"></div>
+                        <div class="form-row-col"><label>Celular / WhatsApp*</label><input type="text" id="m-telefone" placeholder="(11) 90000-0000"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>DOCUMENTAÇÃO E CNH</legend>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>Nº Registro CNH*</label>
+                            <input type="text" id="m-cnh" placeholder="Número da habilitação">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Categoria*</label>
+                            <select id="m-cnh-categoria">
+                                <option value="">Selecione...</option>
+                                <option value="B">B (Passeio/Utilitário)</option>
+                                <option value="C">C (Caminhão/Toco/Truck)</option>
+                                <option value="D">D (Ônibus/Micro)</option>
+                                <option value="E">E (Carreta/Bitrem)</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Validade CNH*</label>
+                            <input type="date" id="m-cnh-validade" value="${SYSTEM_DATE_STR}" onchange="validateCNH()">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>GERENCIAMENTO DE RISCO E VÍNCULO</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label style="color:var(--eletra-orange)">Status na Gerenciadora*</label>
+                            <select id="m-status-gr">
+                                <option value="PENDENTE">Pendente / Em Análise</option>
+                                <option value="LIBERADO">Apto / Liberado</option>
+                                <option value="BLOQUEADO">Bloqueado (Não Carrega)</option>
+                            </select>
+                        </div>
+                        <div class="form-row-col">
+                            <label>Transportadora Padrão (Opcional)</label>
+                            <select id="m-transportadora">
+                                <option value="">-- Spot / Agregado Autônomo --</option>
+                                ${transpOptions}
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="props-footer" style="margin-top: 20px;">
+                    <button id="btn-save-mot" class="mark-btn action apply" onclick="handleSaveMotorista()">SALVAR MOTORISTA</button>
+                    <button class="mark-btn action" onclick="renderMotorista(document.getElementById('workspace'))">CANCELAR</button>
+                </div>
+            </div>
+
+            <div id="mot-lista" class="tab-content">
+                <table class="data-table">
+                    <thead><tr><th>CPF</th><th>Motorista / Contato</th><th>CNH / Categoria</th><th>Status Risco / Vínculo</th><th>Ações</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    
+    validateCNH();
+}
+
+function validateCNH() {
+    const validadeEl = document.getElementById('m-cnh-validade');
+    const statusCard = document.getElementById('mot-status-card');
+    if (!validadeEl || !statusCard) return;
+
+    const sysDate = new Date(SYSTEM_DATE_STR);
+    const validade = new Date(validadeEl.value);
+
+    if (validade < sysDate) {
+        validadeEl.classList.add('input-error');
+        statusCard.innerText = "ATENÇÃO: CNH VENCIDA"; 
+        statusCard.className = "status-neon inactive";
+    } else {
+        validadeEl.classList.remove('input-error');
+        if (!statusCard.innerText.includes("EDIÇÃO")) {
+            statusCard.innerText = "CNH VÁLIDA"; 
+        }
+        statusCard.className = "status-neon active";
+    }
+}
+
+async function handleSaveMotorista() {
+    const idDoc = document.getElementById('m-id-doc').value;
+    const cpf = document.getElementById('m-cpf').value.replace(/\D/g, '');
+    const nome = document.getElementById('m-nome').value.trim();
+    const cnh = document.getElementById('m-cnh').value.trim();
+    const cnhCategoria = document.getElementById('m-cnh-categoria').value;
+    const cnhValidade = document.getElementById('m-cnh-validade').value;
+
+    if (!cpf || !nome || !cnh || !cnhCategoria || !cnhValidade) { 
+        notify("CPF, Nome e dados da CNH são obrigatórios.", "error"); 
+        return; 
+    }
+
+    if (new Date(cnhValidade) < new Date(SYSTEM_DATE_STR)) {
+        notify("Atenção: A CNH informada está vencida!", "error");
+    }
+
+    const payload = {
+        cpf: cpf,
+        nome: nome,
+        rg: document.getElementById('m-rg').value.trim(),
+        nascimento: document.getElementById('m-nascimento').value,
+        telefone: document.getElementById('m-telefone').value.trim(),
+        cnh: cnh,
+        cnhCategoria: cnhCategoria,
+        cnhValidade: cnhValidade,
+        statusGR: document.getElementById('m-status-gr').value,
+        transportadora: document.getElementById('m-transportadora').value,
+        user: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (idDoc) {
+        if (!confirm(`Atualizar o motorista ${nome}?`)) return;
+        const res = await StorageManager.updateMotorista(idDoc, payload);
+        if (res.success) { notify("Motorista atualizado!"); renderMotorista(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    } else {
+        if (!confirm(`Cadastrar o motorista ${nome}?`)) return;
+        const res = await StorageManager.saveMotorista(payload);
+        if (res.success) { notify("Motorista cadastrado!"); renderMotorista(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    }
+}
+
+async function handleEditMotorista(id) {
+    const m = await StorageManager.getMotoristaById(id);
+    if (!m) return;
+
+    document.getElementById('m-id-doc').value = m.id_doc;
+    document.getElementById('m-cpf').value = m.cpf;
+    document.getElementById('m-nome').value = m.nome;
+    document.getElementById('m-rg').value = m.rg || '';
+    document.getElementById('m-nascimento').value = m.nascimento || '';
+    document.getElementById('m-telefone').value = m.telefone || '';
+    
+    document.getElementById('m-cnh').value = m.cnh;
+    document.getElementById('m-cnh-categoria').value = m.cnhCategoria;
+    document.getElementById('m-cnh-validade').value = m.cnhValidade;
+    
+    document.getElementById('m-status-gr').value = m.statusGR || 'PENDENTE';
+    document.getElementById('m-transportadora').value = m.transportadora || '';
+
+    document.getElementById('mot-status-card').innerText = "EM EDIÇÃO";
+    document.getElementById('mot-status-card').className = "status-neon active";
+    document.getElementById('btn-save-mot').innerText = "ATUALIZAR DADOS";
+    
+    // Força a aba
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('mot-geral').classList.add('active');
+    document.getElementById('tab-mot-geral').classList.add('active');
+
+    validateCNH();
+    notify(`Editando ${m.nome}`, "info");
+}
+
+async function handleDeleteMotorista(id) {
+    if(!confirm("Tem certeza que deseja apagar este motorista da base?")) return;
+    await StorageManager.deleteMotorista(id);
+    notify("Motorista apagado com sucesso.");
+    renderMotorista(document.getElementById('workspace'));
+}
 /* --- AGENDAMENTOS (LÓGICA ASSÍNCRONA) --- */
 let selectedSlots = [];
 
