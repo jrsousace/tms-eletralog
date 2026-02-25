@@ -56,6 +56,37 @@ const StorageManager = {
         await db.collection('equipamentos').doc(id_doc).delete();
         return { success: true };
     },
+    // --- MÓDULO CLIENTES ---
+    getClientes: async function() {
+        try {
+            const snapshot = await db.collection('clientes').get();
+            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
+        } catch (e) { return []; }
+    },
+    getClienteById: async function(id) {
+        try {
+            const doc = await db.collection('clientes').doc(id).get();
+            return doc.exists ? { id_doc: doc.id, ...doc.data() } : null;
+        } catch (e) { return null; }
+    },
+    saveCliente: async function(cliente) {
+        const check = await db.collection('clientes').where('documento', '==', cliente.documento).get();
+        if (!check.empty) return { success: false, msg: "CNPJ/CPF já cadastrado." };
+        await db.collection('clientes').add(cliente);
+        this.logAction("CADASTRO", `Novo Cliente: ${cliente.razao}`);
+        return { success: true };
+    },
+    updateCliente: async function(id, cliente) {
+        try {
+            await db.collection('clientes').doc(id).update(cliente);
+            this.logAction("EDIÇÃO", `Cliente atualizado: ${cliente.razao}`);
+            return { success: true };
+        } catch(e) { return { success: false, msg: "Erro ao atualizar cliente." }; }
+    },
+    deleteCliente: async function(id_doc) {
+        await db.collection('clientes').doc(id_doc).delete();
+        return { success: true };
+    },
     // Busca dados da coleção 'agendamentos'
     getAppointments: async function() {
         try {
@@ -234,6 +265,7 @@ function loadPage(page, module) {
 
     if (page === 'Transportadora') { renderTransportadora(workspace); }
     else if (page === 'Equipamento') { renderEquipamento(workspace); }
+    else if (page === 'Cliente') { renderCliente(workspace); }
     else if (page === 'Agendamentos') { renderAgendamentos(workspace); } 
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
@@ -538,6 +570,213 @@ async function renderEquipamento(container) {
         </div>`;
 }
 
+/* --- MÓDULO CLIENTE (CRUD COMPLETO) --- */
+async function renderCliente(container) {
+    if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Sem permissão.</p></div>`;
+        return;
+    }
+
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando clientes...</div>';
+    
+    const clientes = await StorageManager.getClientes();
+    
+    let rows = clientes.map(c => `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px;">${c.documento}</td>
+            <td><strong>${c.razao}</strong><br><span style="font-size:0.7rem; color:#888;">${c.fantasia || ''}</span></td>
+            <td>${c.cidade || '-'} / ${c.uf || '-'}</td>
+            <td><span style="font-size:0.75rem;">${c.contatoNome || '-'}<br>${c.contatoTel || '-'}</span></td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditCliente('${c.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteCliente('${c.id_doc}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+
+    if (clientes.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhum cliente cadastrado.</td></tr>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" id="tab-cli-geral" onclick="switchTab('cli-geral')">Ficha do Cliente</button>
+                <button class="tab-btn" onclick="switchTab('cli-lista')" style="color:var(--eletra-orange)">Base Cadastrada (${clientes.length})</button>
+            </div>
+            
+            <div id="cli-geral" class="tab-content active" style="position:relative;">
+                <div id="cli-status-card" class="status-neon active">NOVO CADASTRO</div>
+                <input type="hidden" id="c-id-doc">
+
+                <fieldset class="prop-group">
+                    <legend>DADOS FISCAIS</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>CNPJ / CPF*</label>
+                            <input type="text" id="c-doc" placeholder="Apenas números">
+                        </div>
+                        <div class="form-row-col">
+                            <label>Inscrição Estadual (IE)</label>
+                            <input type="text" id="c-ie" placeholder="Ou ISENTO">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label>Razão Social / Nome*</label><input type="text" id="c-razao"></div>
+                        <div class="form-row-col"><label>Nome Fantasia</label><input type="text" id="c-fantasia"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>ENDEREÇO DE ENTREGA</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>CEP <i class="fa-solid fa-magnifying-glass" style="color:var(--eletra-aqua); cursor:pointer;" onclick="buscaCepCliente()"></i></label>
+                            <input type="text" id="c-cep" placeholder="00000-000" onblur="buscaCepCliente()">
+                        </div>
+                        <div class="form-row-col"><label>Logradouro (Rua/Av)*</label><input type="text" id="c-rua"></div>
+                        <div class="form-row-col"><label>Número*</label><input type="text" id="c-num"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                         <div class="form-row-col" style="grid-column: span 2;"><label>Complemento</label><input type="text" id="c-comp" placeholder="Galpão, Sala..."></div>
+                         <div class="form-row-col"><label>Bairro*</label><input type="text" id="c-bairro"></div>
+                         <div class="form-row-col"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top:10px;">
+                        <div class="form-row-col"><label>Cidade*</label><input type="text" id="c-cidade"></div>
+                        <div class="form-row-col"><label>UF*</label><input type="text" id="c-uf" maxlength="2" placeholder="Ex: SP" oninput="this.value = this.value.toUpperCase()"></div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>CONTATO & RESTRIÇÕES OPERACIONAIS</legend>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div class="form-row-col"><label>Nome Contato</label><input type="text" id="c-contato-nome" placeholder="Responsável Recebimento"></div>
+                        <div class="form-row-col"><label>Telefone / Whats</label><input type="text" id="c-contato-tel" placeholder="(11) 90000-0000"></div>
+                        <div class="form-row-col"><label>E-mail</label><input type="email" id="c-contato-email" placeholder="email@cliente.com"></div>
+                    </div>
+                    <div class="form-row-col" style="margin-top:10px;">
+                        <label style="color:var(--eletra-orange)">Restrições de Entrega (Horários, Veículos permitidos, Agendamento prévio, etc)</label>
+                        <input type="text" id="c-restricoes" placeholder="Ex: Recebe somente das 08h às 12h. Carreta não entra na rua.">
+                    </div>
+                </fieldset>
+
+                <div class="props-footer" style="margin-top: 20px;">
+                    <button id="btn-save-cli" class="mark-btn action apply" onclick="handleSaveCliente()">SALVAR CLIENTE</button>
+                    <button class="mark-btn action" onclick="renderCliente(document.getElementById('workspace'))">CANCELAR</button>
+                </div>
+            </div>
+
+            <div id="cli-lista" class="tab-content">
+                <table class="data-table">
+                    <thead><tr><th>CNPJ/CPF</th><th>Cliente</th><th>Localidade</th><th>Contato</th><th>Ações</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+// Consumo de API Externa (ViaCEP) para facilitar cadastro
+async function buscaCepCliente() {
+    let cep = document.getElementById('c-cep').value.replace(/\D/g, '');
+    if (cep.length === 8) {
+        try {
+            let response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+            let data = await response.json();
+            if (!data.erro) {
+                document.getElementById('c-rua').value = data.logradouro;
+                document.getElementById('c-bairro').value = data.bairro;
+                document.getElementById('c-cidade').value = data.localidade;
+                document.getElementById('c-uf').value = data.uf;
+                document.getElementById('c-num').focus();
+            } else {
+                notify("CEP não encontrado.", "error");
+            }
+        } catch(e) {
+            console.error(e);
+        }
+    }
+}
+
+async function handleSaveCliente() {
+    const idDoc = document.getElementById('c-id-doc').value;
+    const documento = document.getElementById('c-doc').value.replace(/\D/g, '');
+    const razao = document.getElementById('c-razao').value.trim();
+
+    if (!documento || !razao) { notify("CNPJ/CPF e Razão Social são obrigatórios.", "error"); return; }
+
+    const payload = {
+        documento: documento,
+        ie: document.getElementById('c-ie').value.trim(),
+        razao: razao,
+        fantasia: document.getElementById('c-fantasia').value.trim(),
+        cep: document.getElementById('c-cep').value.trim(),
+        rua: document.getElementById('c-rua').value.trim(),
+        numero: document.getElementById('c-num').value.trim(),
+        complemento: document.getElementById('c-comp').value.trim(),
+        bairro: document.getElementById('c-bairro').value.trim(),
+        cidade: document.getElementById('c-cidade').value.trim(),
+        uf: document.getElementById('c-uf').value.toUpperCase(),
+        contatoNome: document.getElementById('c-contato-nome').value.trim(),
+        contatoTel: document.getElementById('c-contato-tel').value.trim(),
+        contatoEmail: document.getElementById('c-contato-email').value.trim(),
+        restricoes: document.getElementById('c-restricoes').value.trim(),
+        user: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (idDoc) {
+        if (!confirm(`Atualizar cadastro de ${razao}?`)) return;
+        const res = await StorageManager.updateCliente(idDoc, payload);
+        if (res.success) { notify("Cliente atualizado!"); renderCliente(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    } else {
+        if (!confirm(`Cadastrar o cliente ${razao}?`)) return;
+        const res = await StorageManager.saveCliente(payload);
+        if (res.success) { notify("Cliente cadastrado!"); renderCliente(document.getElementById('workspace')); }
+        else { notify(res.msg, "error"); }
+    }
+}
+
+async function handleEditCliente(id) {
+    const c = await StorageManager.getClienteById(id);
+    if (!c) return;
+
+    document.getElementById('c-id-doc').value = c.id_doc;
+    document.getElementById('c-doc').value = c.documento;
+    document.getElementById('c-ie').value = c.ie || '';
+    document.getElementById('c-razao').value = c.razao;
+    document.getElementById('c-fantasia').value = c.fantasia || '';
+    document.getElementById('c-cep').value = c.cep || '';
+    document.getElementById('c-rua').value = c.rua || '';
+    document.getElementById('c-num').value = c.numero || '';
+    document.getElementById('c-comp').value = c.complemento || '';
+    document.getElementById('c-bairro').value = c.bairro || '';
+    document.getElementById('c-cidade').value = c.cidade || '';
+    document.getElementById('c-uf').value = c.uf || '';
+    document.getElementById('c-contato-nome').value = c.contatoNome || '';
+    document.getElementById('c-contato-tel').value = c.contatoTel || '';
+    document.getElementById('c-contato-email').value = c.contatoEmail || '';
+    document.getElementById('c-restricoes').value = c.restricoes || '';
+
+    document.getElementById('cli-status-card').innerText = "EM EDIÇÃO";
+    document.getElementById('cli-status-card').className = "status-neon active";
+    document.getElementById('btn-save-cli').innerText = "ATUALIZAR DADOS";
+    
+    // Força a aba
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('cli-geral').classList.add('active');
+    document.getElementById('tab-cli-geral').classList.add('active');
+
+    notify(`Editando ${c.razao}`, "info");
+}
+
+async function handleDeleteCliente(id) {
+    if(!confirm("Tem certeza que deseja apagar este cliente?")) return;
+    await StorageManager.deleteCliente(id);
+    notify("Cliente apagado com sucesso.");
+    renderCliente(document.getElementById('workspace'));
+}
+
 // Lógica de Cálculo de Capacidade
 function calcCapacidade() {
     const pbt = parseFloat(document.getElementById('e-pbt').value) || 0;
@@ -666,7 +905,6 @@ async function handleEditEquipamento(id) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('eq-geral').classList.add('active');
     document.getElementById('tab-eq-geral').classList.add('active');
-
     checkReboqueRequirement(); // Ajusta os placeholders
     notify("Editando veículo " + e.placa, "info");
 }
@@ -681,14 +919,12 @@ async function handleDeleteEquipamento(id) {
 async function handleEditTransportadora(id) {
     const t = await StorageManager.getTransportadoraById(id);
     if (!t) { notify("Erro ao carregar dados.", "error"); return; }
-
     document.getElementById('t-id-doc').value = t.id_doc;
     document.getElementById('t-cnpj').value = t.cnpj;
     document.getElementById('t-razao').value = t.razao;
     document.getElementById('t-fantasia').value = t.fantasia || '';
     document.getElementById('t-contato-nome').value = t.contatoNome || '';
     document.getElementById('t-contato-tel').value = t.contatoTel || '';
-    
     document.getElementById('t-rntrc').value = t.rntrc || '';
     document.getElementById('t-val-rntrc').value = t.rntrcValidade;
     document.getElementById('t-frota').value = t.frotaPropriaPct || '';
