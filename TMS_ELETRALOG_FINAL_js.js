@@ -110,36 +110,15 @@ const StorageManager = {
             return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
         } catch (e) { return []; }
     },
-    saveTransportadora: async function(transp) {
-        const check = await db.collection('transportadoras').where('cnpj', '==', transp.cnpj).get();
-        if (!check.empty) return { success: false, msg: "CNPJ já cadastrado." };
-        await db.collection('transportadoras').add(transp);
-        this.logAction("CADASTRO", `Nova Transportadora: ${transp.razao}`);
-        return { success: true };
-    },
-    deleteTransportadora: async function(id_doc) {
-        await db.collection('transportadoras').doc(id_doc).delete();
-        return { success: true };
-    },
-
-    deleteUser: async function(userId) {
-        const snapshot = await db.collection('usuarios').where('id', '==', userId).get();
-        if (snapshot.empty) return { success: false, msg: "Usuário não encontrado." };
-        
-        const doc = snapshot.docs[0];
-        if (doc.data().role === 'MASTER') return { success: false, msg: "Não pode excluir Master." };
-        
-        await db.collection('usuarios').doc(doc.id).delete();
-        return { success: true };
-    },
-
-    // ---> ADICIONE ESTE BLOCO AQUI <---
-    getTransportadoras: async function() {
+    
+    // Busca uma única transportadora pelo ID (Para Edição)
+    getTransportadoraById: async function(id) {
         try {
-            const snapshot = await db.collection('transportadoras').get();
-            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
-        } catch (e) { return []; }
+            const doc = await db.collection('transportadoras').doc(id).get();
+            return doc.exists ? { id_doc: doc.id, ...doc.data() } : null;
+        } catch (e) { return null; }
     },
+
     saveTransportadora: async function(transp) {
         const check = await db.collection('transportadoras').where('cnpj', '==', transp.cnpj).get();
         if (!check.empty) return { success: false, msg: "CNPJ já cadastrado no sistema." };
@@ -147,20 +126,22 @@ const StorageManager = {
         this.logAction("CADASTRO", `Nova Transportadora: ${transp.razao}`);
         return { success: true };
     },
+
+    updateTransportadora: async function(id, transp) {
+        try {
+            await db.collection('transportadoras').doc(id).update(transp);
+            this.logAction("EDIÇÃO", `Transportadora atualizada: ${transp.razao}`);
+            return { success: true };
+        } catch(e) {
+            return { success: false, msg: "Erro ao atualizar." };
+        }
+    },
+
     deleteTransportadora: async function(id_doc) {
         await db.collection('transportadoras').doc(id_doc).delete();
         return { success: true };
     },
     // ---------------------------------
-
-    logAction: function(action, details) {
-        db.collection('logs').add({
-            timestamp: new Date().toISOString(),
-            user: CURRENT_USER.name,
-            action: action,
-            details: details
-        });
-    },
 
     logAction: function(action, details) {
         db.collection('logs').add({
@@ -243,27 +224,31 @@ async function renderTransportadora(container) {
     let rows = transps.map(t => `
         <tr style="border-bottom:1px solid #333;">
             <td style="padding:10px;">${t.cnpj}</td>
-            <td><strong>${t.razao}</strong></td>
-            <td>${t.contatoNome} (${t.contatoTel})</td>
-            <td>${t.rntrcValidade}</td>
+            <td><strong>${t.razao}</strong><br><span style="font-size:0.7rem; color:#888;">${t.fantasia || ''}</span></td>
+            <td>${t.contatoNome}<br><span style="font-size:0.7rem;">${t.contatoTel}</span></td>
+            <td>${t.rntrcValidade}<br><span style="font-size:0.7rem; color:${new Date(t.rntrcValidade) < new Date() ? '#FF3131' : '#00D4FF'}">RNTRC</span></td>
+            <td style="font-size:0.7rem;">RCTR-C: ${t.seguros?.rctrc?.seguradora || '-'}<br>Frota: ${t.frotaPropriaPct || '0'}%</td>
             <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:2px 8px; margin-right:5px;" onclick="handleEditTransportadora('${t.id_doc}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
                 <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:2px 8px;" onclick="handleDeleteTransportadora('${t.id_doc}')" title="Apagar"><i class="fa-solid fa-trash"></i></button>
             </td>
         </tr>
     `).join('');
 
-    if (transps.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhuma parceira cadastrada.</td></tr>`;
+    if (transps.length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhuma parceira cadastrada.</td></tr>`;
 
-    // Retirei a aba "Operacional" já que unificamos tudo
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px;">
-            <div id="status-card" class="status-neon active">NOVO CADASTRO</div>
             <div class="props-tabs">
-                <button class="tab-btn active" onclick="switchTab('geral')">Dados da Transportadora</button>
-                <button class="tab-btn" onclick="switchTab('lista-transp')" style="color:var(--eletra-orange)">Base Cadastrada (${transps.length})</button>
+                <button class="tab-btn active" id="tab-geral-btn" onclick="switchTab('geral')">Geral / Seguros / Operacional</button>
+                <button class="tab-btn" onclick="switchTab('lista-transp')" style="color:var(--eletra-orange)">Cadastradas (${transps.length})</button>
             </div>
             
-            <div id="geral" class="tab-content active">
+            <div id="geral" class="tab-content active" style="position:relative;">
+                <div id="status-card" class="status-neon active">NOVO CADASTRO</div>
+                
+                <input type="hidden" id="t-id-doc">
+
                 <div class="form-row"><label>CNPJ*:</label><input type="text" id="t-cnpj" placeholder="Digite apenas números"></div>
                 <div class="form-row"><label>Razão Social*:</label><input type="text" id="t-razao" placeholder="Nome oficial na Receita Federal"></div>
                 <div class="form-row"><label>Nome Fantasia:</label><input type="text" id="t-fantasia" placeholder="Nome comercial"></div>
@@ -293,14 +278,14 @@ async function renderTransportadora(container) {
                 </fieldset>
 
                 <div class="props-footer" style="margin-top: 20px;">
-                    <button class="mark-btn action apply" onclick="handleSaveTransportadora()">SALVAR NA NUVEM</button>
-                    <button class="mark-btn action" onclick="goHome()">CANCELAR</button>
+                    <button id="btn-save-transp" class="mark-btn action apply" onclick="handleSaveTransportadora()">SALVAR CADASTRO</button>
+                    <button class="mark-btn action" onclick="cancelEditMode()">CANCELAR</button>
                 </div>
             </div>
 
             <div id="lista-transp" class="tab-content">
                 <table class="data-table">
-                    <thead><tr><th>CNPJ</th><th>Razão Social</th><th>Contato Operacional</th><th>Validade RNTRC</th><th>Ações</th></tr></thead>
+                    <thead><tr><th>CNPJ</th><th>Razão / Fantasia</th><th>Contato</th><th>RNTRC</th><th>Detalhes</th><th>Ações</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
@@ -325,12 +310,18 @@ function validateTranspDates() {
     if (status) {
         if (expired) { 
             status.innerText = "ATENÇÃO: DOC VENCIDO"; status.className = "status-neon inactive"; 
+        } else { 
+            // Mantém o texto "EM EDIÇÃO" se estiver editando, senão "NOVO" ou "OK"
+            if (!status.innerText.includes("EDIÇÃO") && !status.innerText.includes("NOVO")) {
+                status.innerText = "DOCUMENTAÇÃO OK"; 
+            }
+            status.className = "status-neon active"; 
         }
-        else { status.innerText = "DOCUMENTAÇÃO OK"; status.className = "status-neon active"; }
     }
 }
 
 async function handleSaveTransportadora() {
+    const idDoc = document.getElementById('t-id-doc').value; // Verifica se é edição
     const cnpj = document.getElementById('t-cnpj').value.trim();
     const razao = document.getElementById('t-razao').value.trim();
 
@@ -338,7 +329,7 @@ async function handleSaveTransportadora() {
 
     const zonasAtivas = Array.from(document.querySelectorAll('.zone-btn.selected')).map(btn => btn.innerText);
 
-    const novaTransp = {
+    const dataPayload = {
         cnpj: cnpj,
         razao: razao,
         fantasia: document.getElementById('t-fantasia').value.trim(),
@@ -358,16 +349,86 @@ async function handleSaveTransportadora() {
         timestamp: new Date().toISOString()
     };
 
-    if (!confirm(`Confirmar o cadastro de ${razao}?`)) return;
-
-    const res = await StorageManager.saveTransportadora(novaTransp);
-    
-    if (res.success) {
-        notify("Transportadora salva com sucesso!");
-        renderTransportadora(document.getElementById('workspace')); // Atualiza a tela
+    if (idDoc) {
+        // MODO ATUALIZAÇÃO
+        if (!confirm(`Confirma a atualização dos dados de ${razao}?`)) return;
+        const res = await StorageManager.updateTransportadora(idDoc, dataPayload);
+        if (res.success) {
+            notify("Atualizado com sucesso!");
+            renderTransportadora(document.getElementById('workspace'));
+        } else {
+            notify(res.msg, "error");
+        }
     } else {
-        notify(res.msg, "error");
+        // MODO CRIAÇÃO (NOVO)
+        if (!confirm(`Confirma o cadastro de ${razao}?`)) return;
+        const res = await StorageManager.saveTransportadora(dataPayload);
+        if (res.success) {
+            notify("Salvo com sucesso!");
+            renderTransportadora(document.getElementById('workspace'));
+        } else {
+            notify(res.msg, "error");
+        }
     }
+}
+
+async function handleEditTransportadora(id) {
+    const t = await StorageManager.getTransportadoraById(id);
+    if (!t) { notify("Erro ao carregar dados.", "error"); return; }
+
+    // Preenche os campos
+    document.getElementById('t-id-doc').value = t.id_doc;
+    document.getElementById('t-cnpj').value = t.cnpj;
+    document.getElementById('t-razao').value = t.razao;
+    document.getElementById('t-fantasia').value = t.fantasia || '';
+    document.getElementById('t-contato-nome').value = t.contatoNome || '';
+    document.getElementById('t-contato-tel').value = t.contatoTel || '';
+    
+    document.getElementById('t-rntrc').value = t.rntrc || '';
+    document.getElementById('t-val-rntrc').value = t.rntrcValidade;
+    document.getElementById('t-frota').value = t.frotaPropriaPct || '';
+    document.getElementById('t-idade').value = t.idadeMedia || '';
+
+    // Seguros
+    if(t.seguros) {
+        if(t.seguros.rctrc) {
+            document.getElementById('t-rctrc').value = t.seguros.rctrc.apolice || '';
+            document.getElementById('t-seg-rctrc').value = t.seguros.rctrc.seguradora || '';
+            document.getElementById('t-val-rctrc').value = t.seguros.rctrc.validade;
+        }
+        if(t.seguros.rcdc) {
+            document.getElementById('t-rcdc').value = t.seguros.rcdc.apolice || '';
+            document.getElementById('t-seg-rcdc').value = t.seguros.rcdc.seguradora || '';
+            document.getElementById('t-val-rcdc').value = t.seguros.rcdc.validade;
+        }
+        if(t.seguros.rcv) {
+            document.getElementById('t-rcv').value = t.seguros.rcv.apolice || '';
+            document.getElementById('t-seg-rcv').value = t.seguros.rcv.seguradora || '';
+            document.getElementById('t-val-rcv').value = t.seguros.rcv.validade;
+        }
+    }
+
+    // Zonas
+    document.querySelectorAll('.zone-btn').forEach(btn => {
+        if (t.zonas && t.zonas.includes(btn.innerText)) btn.classList.add('selected');
+        else btn.classList.remove('selected');
+    });
+
+    // Ajusta UI para modo edição
+    document.getElementById('status-card').innerText = "EM EDIÇÃO";
+    document.getElementById('status-card').className = "status-neon active";
+    document.getElementById('btn-save-transp').innerText = "ATUALIZAR DADOS";
+    document.getElementById('btn-save-transp').style.color = "var(--eletra-orange)";
+    document.getElementById('btn-save-transp').style.borderColor = "var(--eletra-orange)";
+    
+    // Troca para a aba Geral
+    switchTab('geral');
+    validateTranspDates(); // Revalida as datas carregadas
+    notify("Modo de edição ativado.", "info");
+}
+
+function cancelEditMode() {
+    renderTransportadora(document.getElementById('workspace'));
 }
 
 async function handleDeleteTransportadora(id_doc) {
@@ -376,97 +437,6 @@ async function handleDeleteTransportadora(id_doc) {
     if (res.success) {
         notify("Transportadora excluída.");
         renderTransportadora(document.getElementById('workspace')); // Atualiza a tela
-    }
-}
-
-function validateTranspDates() {
-    const sysDate = new Date(SYSTEM_DATE_STR);
-    const ids = ['t-val-rntrc', 't-val-rctrc', 't-val-rcdc', 't-val-rcv'];
-    let expired = false;
-    
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (new Date(el.value) < sysDate) { el.classList.add('input-error'); expired = true; }
-        else { el.classList.remove('input-error'); }
-    });
-    
-    const status = document.getElementById('status-card');
-    if (status) {
-        if (expired) { 
-            status.innerText = "ATENÇÃO: VENCIDO"; status.className = "status-neon inactive"; 
-        } else { 
-            status.innerText = "DOCUMENTAÇÃO OK"; status.className = "status-neon active"; 
-        }
-    }
-}
-
-async function handleSaveTransportadora() {
-    const cnpj = document.getElementById('t-cnpj').value.trim();
-    const razao = document.getElementById('t-razao').value.trim();
-
-    if (!cnpj || !razao) { notify("CNPJ e Razão Social são obrigatórios.", "error"); return; }
-
-    const zonasAtivas = Array.from(document.querySelectorAll('.zone-btn.selected')).map(btn => btn.innerText);
-
-    const novaTransp = {
-        cnpj: cnpj,
-        razao: razao,
-        fantasia: document.getElementById('t-fantasia').value.trim(),
-        rntrc: document.getElementById('t-rntrc').value.trim(),
-        rntrcValidade: document.getElementById('t-val-rntrc').value,
-        seguros: {
-            rctrc: { apolice: document.getElementById('t-rctrc').value.trim(), seguradora: document.getElementById('t-seg-rctrc').value.trim(), validade: document.getElementById('t-val-rctrc').value },
-            rcdc: { apolice: document.getElementById('t-rcdc').value.trim(), seguradora: document.getElementById('t-seg-rcdc').value.trim(), validade: document.getElementById('t-val-rcdc').value },
-            rcv: { apolice: document.getElementById('t-rcv').value.trim(), seguradora: document.getElementById('t-seg-rcv').value.trim(), validade: document.getElementById('t-val-rcv').value }
-        },
-        frotaPropriaPct: document.getElementById('t-frota').value.trim(),
-        idadeMedia: document.getElementById('t-idade').value.trim(),
-        zonas: zonasAtivas,
-        cadastradoPor: CURRENT_USER.name,
-        timestamp: new Date().toISOString()
-    };
-
-    if (!confirm(`Confirma o cadastro de ${razao}?`)) return;
-
-    const res = await StorageManager.saveTransportadora(novaTransp);
-    
-    if (res.success) {
-        notify("Salvo com sucesso!");
-        renderTransportadora(document.getElementById('workspace'));
-    } else {
-        notify(res.msg, "error");
-    }
-}
-
-async function handleDeleteTransportadora(id_doc) {
-    if (!confirm("Deseja apagar esta transportadora?")) return;
-    const res = await StorageManager.deleteTransportadora(id_doc);
-    if (res.success) {
-        notify("Excluída com sucesso.");
-        renderTransportadora(document.getElementById('workspace'));
-    }
-}
-
-function validateDates() {
-    const sysDate = new Date(SYSTEM_DATE_STR);
-    const ids = ['val-rntrc', 'val-rctrc', 'val-rcdc', 'val-rcv'];
-    let expired = false;
-    
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (new Date(el.value) < sysDate) { el.classList.add('input-error'); expired = true; }
-        else { el.classList.remove('input-error'); }
-    });
-    
-    const status = document.getElementById('status-card');
-    if (status) {
-        if (expired) { 
-            status.innerText = "INATIVO"; status.className = "status-neon inactive"; 
-            notify("⚠️ ALERTA: Documentação Vencida!", "error"); 
-        }
-        else { status.innerText = "ATIVO"; status.className = "status-neon active"; }
     }
 }
 
@@ -501,6 +471,7 @@ function renderAgendamentos(container) {
                             <div class="form-row"><label>CNPJ Transp.:</label><input type="text" id="input-cnpj-transp"></div>
                             <div class="form-row"><label style="color:var(--eletra-aqua)">Pedido Frete*:</label><input type="text" id="input-po-frete"></div>
                             <div class="form-row"><label>CTRC:</label><input type="text" id="input-ctrc"></div>
+                            
                             <div class="form-row"><label>Tipo Veículo:</label>
                                 <select id="input-tipo-veiculo">
                                     <option value="">Selecione...</option>
@@ -518,6 +489,7 @@ function renderAgendamentos(container) {
                                 </select>
                             </div>
                             <div class="form-row"><label>Observações:</label><input type="text" id="input-obs" placeholder="Ex: Descarga lateral..."></div>
+
                         </div>
                     </div>
                 </fieldset>
@@ -525,7 +497,7 @@ function renderAgendamentos(container) {
                     <legend>Alocação</legend>
                     <div class="form-row"><label>Local:</label><select id="loc" onchange="updateInboundSlots()"><option value="Doca">Doca</option><option value="Portaria">Portaria</option></select></div>
                     <div class="form-row"><label>Data:</label><input type="date" id="in-date" value="${SYSTEM_DATE_STR}" onchange="updateInboundSlots()"></div>
-                    <div class="slot-grid" id="inbound-slots"></div>
+                    <div class="slot-grid" id="inbound-slots" style="max-height: 250px; overflow-y: auto;"></div>
                 </fieldset>
                 <div style="margin-top: 10px; display: flex; justify-content: space-between;">
                     <button class="mark-btn" onclick="toggleLogPanel()"><i class="fa-solid fa-list"></i> Logs / Agenda</button>
@@ -567,13 +539,16 @@ async function updateInboundSlots() {
             let tooltip = 'Livre';
 
             if (booking) {
+                // Tratativa para evitar quebra de aspas nas observações
+                const escObs = (booking.details.obs || '').replace(/'/g, "\\'");
+
                 if (booking.userId === CURRENT_USER.id) {
                     className = 'my-booking'; 
                     clickAction = `toggleSlot(this, '${time}')`;
                     tooltip = `Meu: PO ${booking.details.poMat}`;
                 } else {
                     className = 'occupied-by-others';
-                    clickAction = `showBookingInfo('${booking.userName}', '${booking.details.poMat}', '${booking.details.comprador}', '${booking.timestamp}')`;
+                    clickAction = `showBookingInfo('${booking.userName}', '${booking.details.poMat}', '${booking.details.comprador}', '${booking.timestamp}', '${booking.details.tipoVeiculo || ''}', '${escObs}')`;
                     tooltip = `Ocupado por: ${booking.userName}`;
                 }
             } else {
@@ -601,7 +576,8 @@ function toggleSlot(el, time) {
 
 async function saveBooking() {
     const date = document.getElementById('in-date').value;
-    const location = document.getElementById('loc').value;    
+    const location = document.getElementById('loc').value;
+    
     const poMat = document.getElementById('input-po-mat').value.trim();
     const nf = document.getElementById('input-nf').value.trim();
     const fornecedor = document.getElementById('input-fornecedor').value.trim();
@@ -612,8 +588,10 @@ async function saveBooking() {
     const cnpjTransp = document.getElementById('input-cnpj-transp').value.trim();
     const poFrete = document.getElementById('input-po-frete').value.trim();
     const ctrc = document.getElementById('input-ctrc').value.trim();
+    
+    // --- NOVO: LENDO DA TELA ---
     const tipoVeiculo = document.getElementById('input-tipo-veiculo').value; 
-    const obsAgenda = document.getElementById('input-obs').value.trim();
+    const obs = document.getElementById('input-obs').value.trim();
 
     if (selectedSlots.length === 0) { notify("Selecione um horário.", "error"); return; }
     if (!poMat || !nf || !comprador || !poFrete) { notify("Preencha campos obrigatórios (*).", "error"); return; }
@@ -629,7 +607,8 @@ async function saveBooking() {
         userId: CURRENT_USER.id,
         userName: CURRENT_USER.name,
         timestamp: new Date().toISOString(),
-        details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obsAgenda }
+        // --- NOVO: ENVIANDO PARA O BANCO DE DADOS ---
+        details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obs }
     }));
 
     await StorageManager.saveAppointments(newBookings);
@@ -755,7 +734,8 @@ async function updateLogPanel(date, location) {
     if (currentAppts.length === 0) { html += `<div style="font-style:italic; color:#777; font-size:0.7rem;">Vazio.</div>`; } 
     else {
         currentAppts.forEach(a => { 
-            html += `<div style="border-bottom:1px solid #333; padding:2px 0; font-size:0.7rem;"><strong style="color:#fff;">${a.time}</strong> | Sol: ${a.details.solicitante||'-'} | Comp: ${a.details.comprador||'-'} | <span style="color:#888;">Agendado: ${a.userName}</span></div>`; 
+            const tipoDesc = a.details.tipoVeiculo ? ` | Veículo: ${a.details.tipoVeiculo}` : '';
+            html += `<div style="border-bottom:1px solid #333; padding:2px 0; font-size:0.7rem;"><strong style="color:#fff;">${a.time}</strong> | Sol: ${a.details.solicitante||'-'} | Comp: ${a.details.comprador||'-'}${tipoDesc} | <span style="color:#888;">Agendado: ${a.userName}</span></div>`; 
         });
     }
     
@@ -804,14 +784,13 @@ async function printDailySchedule() {
     const generateRows = (list) => {
         if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Vazio</td></tr>';
         return list.map(a => {
-            // Concatena a transportadora com o tipo de veículo
             const transpInfo = a.details.tipoVeiculo ? `${a.details.transp||'-'} (${a.details.tipoVeiculo})` : (a.details.transp||'-');
             return `<tr><td>${a.time}</td><td>${transpInfo}</td><td>${a.details.ctrc||'-'}</td><td>${a.details.solicitante||'-'}</td><td>${a.details.comprador||'-'}</td><td>${a.userName}</td><td>PO:${a.details.poMat}</td></tr>`
         }).join('');
     };
 
     const win = window.open('', '', 'height=800,width=950');
-    win.document.write(`<html><head><title>Agenda</title><style>body{font-family:Arial;font-size:11px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:5px}th{background:#eee}</style></head><body><h1>Agenda ${date.split('-').reverse().join('/')}</h1><h2>DOCA</h2><table><thead><tr><th>Hora</th><th>Transp.</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(doca)}</tbody></table><h2>PORTARIA</h2><table><thead><tr><th>Hora</th><th>Transp.</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(portaria)}</tbody></table></body></html>`);
+    win.document.write(`<html><head><title>Agenda</title><style>body{font-family:Arial;font-size:11px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:5px}th{background:#eee}</style></head><body><h1>Agenda ${date.split('-').reverse().join('/')}</h1><h2>DOCA</h2><table><thead><tr><th>Hora</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(doca)}</tbody></table><h2>PORTARIA</h2><table><thead><tr><th>Hora</th><th>Transp. (Veículo)</th><th>CTRC</th><th>Solic.</th><th>Comp.</th><th>Por</th><th>Ref</th></tr></thead><tbody>${generateRows(portaria)}</tbody></table></body></html>`);
     win.document.close();
     win.print();
 }
@@ -828,12 +807,12 @@ function notify(msg, type='success') {
 }
 function handleEdit() { notify("Modo edição ativado."); }
 
-function showBookingInfo(u,p,s,t) { 
+function showBookingInfo(u,p,s,t,tipo,obs) { 
     // Busca direto do banco para pegar os dados completos, incluindo as novidades
     StorageManager.getAppointments().then(appts => {
         const appt = appts.find(a => a.timestamp === t);
         if(appt) {
-            let msg = `🔒 ${appt.userName} | PO: ${appt.details.poMat} | NF: ${appt.details.nf} | Comp: ${appt.details.comprador || '?'}`;
+            let msg = `🔒 ${appt.userName} | PO: ${appt.details.poMat} | Sol: ${appt.details.solicitante || '?'}`;
             if(appt.details.tipoVeiculo) msg += ` | Veíc: ${appt.details.tipoVeiculo}`;
             if(appt.details.obs) msg += ` | Obs: ${appt.details.obs}`;
             notify(msg, "info");
