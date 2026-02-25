@@ -410,29 +410,26 @@ async function renderEquipamento(container) {
         return;
     }
 
-    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando frota e parceiros...</div>';
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando frota...</div>';
     
-    // Busca dados paralelos (Frota e Transportadoras para o vínculo)
-    const [equips, transps] = await Promise.all([
-        StorageManager.getEquipamentos(),
-        StorageManager.getTransportadoras()
-    ]);
+    // Busca apenas a frota (não precisamos mais cruzar com transportadoras para o dono)
+    const equips = await StorageManager.getEquipamentos();
     
-    // Gera opções do Select de Transportadoras
-    const transpOptions = transps.map(t => `<option value="${t.razao}">${t.razao} (${t.cnpj})</option>`).join('');
-
     let rows = equips.map(e => `
         <tr style="border-bottom:1px solid #333;">
             <td style="padding:10px;">
-                <span style="color:var(--eletra-aqua); font-weight:bold;">${e.placa}</span><br>
-                <span style="font-size:0.7rem; color:#888;">${e.placasReboque || ''}</span>
+                <span style="color:var(--eletra-aqua); font-weight:bold; font-size:0.85rem;">${e.placa}</span>
+                ${e.placasReboque ? '<br><span style="font-size:0.7rem; color:#aaa;">Reb: '+e.placasReboque+'</span>' : ''}
             </td>
-            <td>${e.tipo}<br><span style="font-size:0.7rem;">${e.marca || ''} ${e.modelo || ''}</span></td>
-            <td>${e.capacidade} kg<br><span style="font-size:0.7rem; color:#aaa;">PBT: ${e.pbt} - T: ${e.tara}</span></td>
-            <td>${e.transportadora || '<span style="color:#666">Spot / Autônomo</span>'}</td>
+            <td>${e.tipo}<br><span style="font-size:0.7rem;">${e.modelo || ''}</span></td>
+            <td>${e.capacidade} kg<br><span style="font-size:0.7rem; color:#aaa;">PBT: ${e.pbt} - Tara: ${e.tara}</span></td>
+            <td>
+                <span style="font-size:0.75rem;">${e.proprietario || '-'}</span><br>
+                <span style="font-size:0.65rem; color:#888;">${e.docProprietario || ''}</span>
+            </td>
             <td style="text-align:right;">
-                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditEquipamento('${e.id_doc}')"><i class="fa-solid fa-pencil"></i></button>
-                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteEquipamento('${e.id_doc}')"><i class="fa-solid fa-trash"></i></button>
+                <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px; margin-right:5px;" onclick="handleEditEquipamento('${e.id_doc}')" title="Editar"><i class="fa-solid fa-pencil"></i></button>
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:4px 10px;" onclick="handleDeleteEquipamento('${e.id_doc}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>
             </td>
         </tr>
     `).join('');
@@ -442,8 +439,8 @@ async function renderEquipamento(container) {
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px;">
             <div class="props-tabs">
-                <button class="tab-btn active" id="tab-eq-geral" onclick="switchTab('eq-geral')">Cadastro de Conjunto</button>
-                <button class="tab-btn" onclick="switchTab('eq-lista')" style="color:var(--eletra-orange)">Frota Ativa (${equips.length})</button>
+                <button class="tab-btn active" id="tab-eq-geral" onclick="switchTab('eq-geral')">Cadastro CRLV</button>
+                <button class="tab-btn" onclick="switchTab('eq-lista')" style="color:var(--eletra-orange)">Frota Cadastrada (${equips.length})</button>
             </div>
             
             <div id="eq-geral" class="tab-content active" style="position:relative;">
@@ -451,85 +448,87 @@ async function renderEquipamento(container) {
                 <input type="hidden" id="e-id-doc">
 
                 <fieldset class="prop-group">
-                    <legend>IDENTIFICAÇÃO DO CONJUNTO</legend>
+                    <legend>DADOS DO VEÍCULO (CONJUNTO)</legend>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                         <div class="form-row-col">
-                            <label style="color:var(--eletra-aqua)">Placa Cavalo / Principal*</label>
-                            <input type="text" id="e-placa" placeholder="ABC-1234" oninput="this.value = this.value.toUpperCase()" style="font-weight:bold;">
+                            <label style="color:var(--eletra-aqua)">Placa Cavalo / Veículo (Mercosul)*</label>
+                            <input type="text" id="e-placa" placeholder="ABC1D23 ou ABC1234" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')" style="font-weight:bold; letter-spacing: 1px;">
                         </div>
                         <div class="form-row-col">
-                            <label>Placas Reboques (Separar por barra /)</label>
-                            <input type="text" id="e-placas-reboque" placeholder="REB-1111 / REB-2222" oninput="this.value = this.value.toUpperCase()">
+                            <label>Placas Reboques (Obrigatório p/ Carreta)</label>
+                            <input type="text" id="e-placas-reboque" placeholder="ABC1D23 / XYZ9999" oninput="this.value = this.value.toUpperCase()">
                         </div>
                     </div>
-                    <div class="form-row" style="margin-top:10px;">
-                        <label style="width:120px;">Proprietário:</label>
-                        <select id="e-transp">
-                            <option value="">-- Veículo Spot / Sem Vínculo Fixo --</option>
-                            ${transpOptions}
-                        </select>
-                    </div>
-                </fieldset>
-
-                <fieldset class="prop-group">
-                    <legend>CARACTERÍSTICAS TÉCNICAS</legend>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                        <div class="form-row-col">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                         <div class="form-row-col" style="grid-column: span 3;">
                             <label>Tipo de Veículo*</label>
-                            <select id="e-tipo" onchange="suggestTara()">
-                                <option value="">Selecione...</option>
+                            <select id="e-tipo" onchange="checkReboqueRequirement()">
+                                <option value="">Selecione a categoria...</option>
                                 <option value="Moto">Moto</option>
                                 <option value="Passeio">Passeio</option>
-                                <option value="Utilitário">Utilitário (Fiorino/Van)</option>
-                                <option value="VUC">VUC / 3/4</option>
-                                <option value="Toco">Toco (2 Eixos)</option>
-                                <option value="Truck">Truck (3 Eixos)</option>
-                                <option value="Carreta">Carreta LS / Cavalo Mecânico</option>
-                                <option value="Bitrem">Bitrem / Rodotrem</option>
+                                <option value="Caminhonete">Caminhonete (Strada, Fiorino)</option>
+                                <option value="Pick Up">Pick Up (Hilux, S10)</option>
+                                <option value="Utilitário">Utilitário (Hyundai HR, Iveco)</option>
+                                <option value="VUC">VUC (VW Express)</option>
+                                <option value="3/4">3/4 (VW 9.170, Accelo)</option>
+                                <option value="Toco">Toco (Semipesado 4x2)</option>
+                                <option value="Truck">Truck (Pesado 6x2 - 3 Eixos)</option>
+                                <option value="Bitruck">Bitruck (Pesado 8x2 - 4 Eixos)</option>
+                                <option value="Carreta">Carreta (5 eixos ou mais)</option>
                             </select>
                         </div>
-                        <div class="form-row-col">
-                            <label>Marca</label>
-                            <input type="text" id="e-marca" placeholder="Ex: Scania">
-                        </div>
-                        <div class="form-row-col">
-                            <label>Modelo</label>
-                            <input type="text" id="e-modelo" placeholder="Ex: R450">
-                        </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                    
+                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top:10px;">
+                         <div class="form-row-col"><label>Marca</label><input type="text" id="e-marca" placeholder="Ex: Scania"></div>
+                         <div class="form-row-col"><label>Modelo</label><input type="text" id="e-modelo" placeholder="Ex: R450"></div>
                          <div class="form-row-col"><label>Ano Fab.</label><input type="number" id="e-ano-fab" placeholder="2020"></div>
                          <div class="form-row-col"><label>Ano Mod.</label><input type="number" id="e-ano-mod" placeholder="2021"></div>
                     </div>
                 </fieldset>
 
                 <fieldset class="prop-group">
-                    <legend>CAPACIDADE DE CARGA (CÁLCULO AUTOMÁTICO)</legend>
+                    <legend>PROPRIETÁRIO (CONFORME CRLV)</legend>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                        <div class="form-row-col">
+                            <label>Nome do Proprietário*</label>
+                            <input type="text" id="e-proprietario" placeholder="Nome exato do documento">
+                        </div>
+                        <div class="form-row-col">
+                            <label>CPF ou CNPJ*</label>
+                            <input type="text" id="e-doc-prop" placeholder="Somente números">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="prop-group">
+                    <legend>CAPACIDADE DE CARGA</legend>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
                         <div class="form-row-col">
-                            <label>PBT (Peso Bruto Total) kg</label>
+                            <label>PBT (kg)</label>
                             <input type="number" id="e-pbt" placeholder="Ex: 45000" oninput="calcCapacidade()">
                         </div>
                         <div class="form-row-col">
-                            <label>Tara (Peso Vazio) kg</label>
+                            <label>Tara (kg)</label>
                             <input type="number" id="e-tara" placeholder="Ex: 15000" oninput="calcCapacidade()">
                         </div>
                         <div class="form-row-col">
-                            <label style="color:var(--eletra-orange)">Carga Útil (Líquido)</label>
+                            <label style="color:var(--eletra-orange)">Lotação Líquida (kg)</label>
                             <input type="number" id="e-cap" readonly style="background:#222; font-weight:bold; color:var(--eletra-orange);">
                         </div>
                     </div>
                 </fieldset>
 
                 <div class="props-footer" style="margin-top: 20px;">
-                    <button id="btn-save-eq" class="mark-btn action apply" onclick="handleSaveEquipamento()">SALVAR VEÍCULO</button>
+                    <button id="btn-save-eq" class="mark-btn action apply" onclick="handleSaveEquipamento()">SALVAR CADASTRO</button>
                     <button class="mark-btn action" onclick="renderEquipamento(document.getElementById('workspace'))">CANCELAR</button>
                 </div>
             </div>
 
             <div id="eq-lista" class="tab-content">
                 <table class="data-table">
-                    <thead><tr><th>Placas (Cavalo / Reboques)</th><th>Veículo</th><th>Capacidade (Liq / PBT / Tara)</th><th>Proprietário</th><th>Ações</th></tr></thead>
+                    <thead><tr><th>Placas</th><th>Veículo</th><th>Capacidade</th><th>Proprietário CRLV</th><th>Ações</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
@@ -544,24 +543,39 @@ function calcCapacidade() {
     document.getElementById('e-cap').value = liq > 0 ? liq : 0;
 }
 
-// Sugestão Inteligente de Tara (Caso o usuário não saiba)
+// Validação visual de carreta
+function checkReboqueRequirement() {
+    const tipo = document.getElementById('e-tipo').value;
+    const lblReb = document.querySelector('label[for="e-placas-reboque"]'); // Busca o label
+    const inputReb = document.getElementById('e-placas-reboque');
+    
+    if (tipo === 'Carreta') {
+        if(lblReb) lblReb.style.color = '#FF8200';
+        inputReb.placeholder = "OBRIGATÓRIO: Placa1 / Placa2";
+    } else {
+        if(lblReb) lblReb.style.color = '#aaa';
+        inputReb.placeholder = "Opcional";
+    }
+    suggestTara(); // Chama a sugestão de tara também
+}
+
 function suggestTara() {
     const tipo = document.getElementById('e-tipo').value;
     const fieldTara = document.getElementById('e-tara');
-    // Médias de mercado aproximadas (apenas sugestão se estiver vazio)
     if(fieldTara.value) return; 
 
+    // Médias de mercado para ajudar o preenchimento
     const taras = {
-        'VUC': 3500,
+        'VUC': 3000,
+        '3/4': 4000,
         'Toco': 6000,
         'Truck': 8500,
-        'Carreta': 16000,
-        'Bitrem': 22000
+        'Bitruck': 10500,
+        'Carreta': 16000
     };
     if(taras[tipo]) {
         fieldTara.value = taras[tipo];
-        calcCapacidade(); // Recalcula se tiver PBT
-        notify(`Tara sugerida para ${tipo}: ${taras[tipo]}kg. Ajuste se necessário.`, "info");
+        calcCapacidade();
     }
 }
 
@@ -569,32 +583,46 @@ async function handleSaveEquipamento() {
     const idDoc = document.getElementById('e-id-doc').value;
     const placa = document.getElementById('e-placa').value.trim();
     const tipo = document.getElementById('e-tipo').value;
+    const placasReb = document.getElementById('e-placas-reboque').value.trim();
+    const prop = document.getElementById('e-proprietario').value.trim();
+    const docProp = document.getElementById('e-doc-prop').value.trim();
 
-    if (!placa || !tipo) { notify("Placa do Cavalo e Tipo são obrigatórios.", "error"); return; }
+    if (!placa || !tipo || !prop || !docProp) { 
+        notify("Placa, Tipo e Dados do Proprietário são obrigatórios.", "error"); 
+        return; 
+    }
+
+    // Validação Específica para Carreta
+    if (tipo === 'Carreta' && !placasReb) {
+        notify("Para CARRETA, é obrigatório informar as placas dos reboques.", "error");
+        document.getElementById('e-placas-reboque').focus();
+        return;
+    }
 
     const payload = {
         placa: placa,
-        placasReboque: document.getElementById('e-placas-reboque').value.trim(),
-        transportadora: document.getElementById('e-transp').value, // Nome da transportadora
+        placasReboque: placasReb,
         tipo: tipo,
         marca: document.getElementById('e-marca').value.trim(),
         modelo: document.getElementById('e-modelo').value.trim(),
         anoFab: document.getElementById('e-ano-fab').value.trim(),
         anoMod: document.getElementById('e-ano-mod').value.trim(),
+        proprietario: prop,
+        docProprietario: docProp,
         pbt: document.getElementById('e-pbt').value.trim(),
         tara: document.getElementById('e-tara').value.trim(),
-        capacidade: document.getElementById('e-cap').value.trim(), // Carga útil calculada
+        capacidade: document.getElementById('e-cap').value.trim(),
         user: CURRENT_USER.name,
         timestamp: new Date().toISOString()
     };
 
     if (idDoc) {
-        if (!confirm(`Atualizar dados do veículo ${placa}?`)) return;
+        if (!confirm(`Atualizar cadastro do veículo ${placa}?`)) return;
         const res = await StorageManager.updateEquipamento(idDoc, payload);
-        if (res.success) { notify("Veículo atualizado!"); renderEquipamento(document.getElementById('workspace')); }
+        if (res.success) { notify("Cadastro atualizado!"); renderEquipamento(document.getElementById('workspace')); }
         else { notify(res.msg, "error"); }
     } else {
-        if (!confirm(`Cadastrar veículo ${placa}?`)) return;
+        if (!confirm(`Confirmar cadastro do veículo ${placa}?`)) return;
         const res = await StorageManager.saveEquipamento(payload);
         if (res.success) { notify("Veículo cadastrado!"); renderEquipamento(document.getElementById('workspace')); }
         else { notify(res.msg, "error"); }
@@ -608,12 +636,16 @@ async function handleEditEquipamento(id) {
     document.getElementById('e-id-doc').value = e.id_doc;
     document.getElementById('e-placa').value = e.placa;
     document.getElementById('e-placas-reboque').value = e.placasReboque || '';
-    document.getElementById('e-transp').value = e.transportadora || '';
     document.getElementById('e-tipo').value = e.tipo;
+    
     document.getElementById('e-marca').value = e.marca || '';
     document.getElementById('e-modelo').value = e.modelo || '';
     document.getElementById('e-ano-fab').value = e.anoFab || '';
     document.getElementById('e-ano-mod').value = e.anoMod || '';
+    
+    document.getElementById('e-proprietario').value = e.proprietario || '';
+    document.getElementById('e-doc-prop').value = e.docProprietario || '';
+    
     document.getElementById('e-pbt').value = e.pbt || '';
     document.getElementById('e-tara').value = e.tara || '';
     document.getElementById('e-cap').value = e.capacidade || '';
@@ -628,13 +660,14 @@ async function handleEditEquipamento(id) {
     document.getElementById('eq-geral').classList.add('active');
     document.getElementById('tab-eq-geral').classList.add('active');
 
+    checkReboqueRequirement(); // Ajusta os placeholders
     notify("Editando veículo " + e.placa, "info");
 }
 
 async function handleDeleteEquipamento(id) {
-    if(!confirm("Excluir veículo da frota?")) return;
+    if(!confirm("Remover este veículo da base?")) return;
     await StorageManager.deleteEquipamento(id);
-    notify("Veículo excluído.");
+    notify("Cadastro removido.");
     renderEquipamento(document.getElementById('workspace'));
 }
 
