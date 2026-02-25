@@ -103,6 +103,25 @@ const StorageManager = {
         return { success: true };
     },
 
+    // --- MÓDULO TRANSPORTADORAS ---
+    getTransportadoras: async function() {
+        try {
+            const snapshot = await db.collection('transportadoras').get();
+            return snapshot.docs.map(doc => ({ id_doc: doc.id, ...doc.data() }));
+        } catch (e) { return []; }
+    },
+    saveTransportadora: async function(transp) {
+        const check = await db.collection('transportadoras').where('cnpj', '==', transp.cnpj).get();
+        if (!check.empty) return { success: false, msg: "CNPJ já cadastrado." };
+        await db.collection('transportadoras').add(transp);
+        this.logAction("CADASTRO", `Nova Transportadora: ${transp.razao}`);
+        return { success: true };
+    },
+    deleteTransportadora: async function(id_doc) {
+        await db.collection('transportadoras').doc(id_doc).delete();
+        return { success: true };
+    },
+
     logAction: function(action, details) {
         db.collection('logs').add({
             timestamp: new Date().toISOString(),
@@ -170,50 +189,84 @@ function loadPage(page, module) {
 }
 
 /* --- MÓDULO TRANSPORTADORA (RESTAURADO) --- */
-function renderTransportadora(container) {
+/* --- MÓDULO TRANSPORTADORA (UNIFICADO E INTEGRADO AO BANCO) --- */
+async function renderTransportadora(container) {
+    if (!ROLE_PERMISSIONS[CURRENT_USER.role].canManageUsers) {
+        container.innerHTML = `<div class="card"><h3 style="color:#FF3131">Acesso Restrito</h3><p>Apenas Gestores podem gerenciar cadastros base.</p></div>`;
+        return;
+    }
+
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando transportadoras da nuvem...</div>';
+    
+    // Busca as que já existem no banco
+    const transps = await StorageManager.getTransportadoras();
+    
+    let rows = transps.map(t => `
+        <tr style="border-bottom:1px solid #333;">
+            <td style="padding:10px;">${t.cnpj}</td>
+            <td><strong>${t.razao}</strong></td>
+            <td>${t.rntrcValidade}</td>
+            <td>${t.idadeMedia || '-'} anos</td>
+            <td style="text-align:right;">
+                <button class="mark-btn" style="border-color:#FF3131; color:#FF3131; padding:2px 8px;" onclick="handleDeleteTransportadora('${t.id_doc}')"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+
+    if (transps.length === 0) rows = `<tr><td colspan="5" style="text-align:center; padding:15px; font-style:italic;">Nenhuma parceira cadastrada.</td></tr>`;
+
     container.innerHTML = `
-        <div class="props-container">
-            <div id="status-card" class="status-neon active">ATIVO</div>
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div id="status-card" class="status-neon active">NOVO CADASTRO</div>
             <div class="props-tabs">
-                <button class="tab-btn active" onclick="switchTab('geral')">Geral / Seguros</button>
-                <button class="tab-btn" onclick="switchTab('operacional')">Operacional</button>
+                <button class="tab-btn active" onclick="switchTab('geral')">Geral / Seguros / Operacional</button>
+                <button class="tab-btn" onclick="switchTab('lista-transp')" style="color:var(--eletra-orange)">Cadastradas (${transps.length})</button>
             </div>
             
             <div id="geral" class="tab-content active">
-                <div class="form-row"><label>CNPJ:</label><input type="text" value="12.345.678/0001-90"></div>
-                <div class="form-row"><label>Razão Social:</label><input type="text" value="TRANS-ELETRA LOGÍSTICA S.A."></div>
-                <div class="form-row"><label>Nome Fantasia:</label><input type="text" value="TRANS-ELETRA LOGÍSTICA S.A."></div>
+                <div class="form-row"><label>CNPJ*:</label><input type="text" id="t-cnpj" placeholder="Apenas números"></div>
+                <div class="form-row"><label>Razão Social*:</label><input type="text" id="t-razao" placeholder="Nome oficial"></div>
+                <div class="form-row"><label>Nome Fantasia:</label><input type="text" id="t-fantasia" placeholder="Nome comercial"></div>
+                
                 <fieldset class="prop-group">
-                    <legend>ANTT</legend>
-                    <div class="form-row"><label>RNTRC:</label><input type="text" style="width:40%"><label style="width:60px; text-align:right">Validade:</label><input type="date" id="val-rntrc" value="2026-12-31" onchange="validateDates()"></div>
+                    <legend>ANTT & FROTA</legend>
+                    <div class="form-row"><label>RNTRC:</label><input type="text" id="t-rntrc" style="width:40%"><label style="width:60px; text-align:right">Validade:</label><input type="date" id="t-val-rntrc" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
+                    <div class="form-row"><label>% Frota Própria:</label><input type="number" id="t-frota" placeholder="Ex: 60"></div>
+                    <div class="form-row"><label>Idade Média (Anos):</label><input type="number" id="t-idade" placeholder="Ex: 5"></div>
                 </fieldset>
+
+                <fieldset class="prop-group"><legend>ZONAS DE ATUAÇÃO</legend>
+                    <div class="marking-group">
+                        ${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn zone-btn" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}
+                    </div>
+                </fieldset>
+
                 <fieldset class="prop-group">
                     <legend>APÓLICES DE SEGURO</legend>
-                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RCTR-C:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rctrc" value="2026-08-15" onchange="validateDates()"></div>
-                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-DC:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rcdc" value="2026-01-20" onchange="validateDates()"></div>
-                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-V:</label><input type="text" placeholder="Apólice" style="width:20%"><input type="text" placeholder="Seguradora" style="width:30%"><input type="date" id="val-rcv" value="2027-05-10" onchange="validateDates()"></div>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RCTR-C:</label><input type="text" id="t-rctrc" placeholder="Apólice" style="width:20%"><input type="text" id="t-seg-rctrc" placeholder="Seguradora" style="width:30%"><input type="date" id="t-val-rctrc" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-DC:</label><input type="text" id="t-rcdc" placeholder="Apólice" style="width:20%"><input type="text" id="t-seg-rcdc" placeholder="Seguradora" style="width:30%"><input type="date" id="t-val-rcdc" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
+                    <div class="form-row"><label style="width:130px; font-size:0.7rem;">RC-V:</label><input type="text" id="t-rcv" placeholder="Apólice" style="width:20%"><input type="text" id="t-seg-rcv" placeholder="Seguradora" style="width:30%"><input type="date" id="t-val-rcv" value="${SYSTEM_DATE_STR}" onchange="validateTranspDates()"></div>
                 </fieldset>
+
+                <div class="props-footer" style="margin-top: 20px;">
+                    <button class="mark-btn action apply" onclick="handleSaveTransportadora()">SALVAR CADASTRO</button>
+                </div>
             </div>
 
-            <div id="operacional" class="tab-content">
-                <div class="form-row"><label>% Frota Própria:</label><input type="text" placeholder="Ex: 60%"></div>
-                <div class="form-row"><label>Idade Média:</label><input type="text" placeholder="Anos"></div>
-                <fieldset class="prop-group"><legend>ZONAS</legend><div class="marking-group">${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => `<button class="mark-btn selected" onclick="this.classList.toggle('selected')">${uf}</button>`).join('')}</div></fieldset>
-            </div>
-
-            <div class="props-footer">
-                <button class="mark-btn action apply" onclick="notify('Cadastro Atualizado')">CADASTRAR</button>
-                <button class="mark-btn action" id="btn-editar" onclick="handleEdit()">EDITAR</button>
-                <button class="mark-btn action" onclick="goHome()">SAIR</button>
+            <div id="lista-transp" class="tab-content">
+                <table class="data-table">
+                    <thead><tr><th>CNPJ</th><th>Razão Social</th><th>Validade RNTRC</th><th>Idade Frota</th><th>Ações</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
             </div>
         </div>`;
     
-    setTimeout(validateDates, 100);
+    validateTranspDates();
 }
 
-function validateDates() {
+function validateTranspDates() {
     const sysDate = new Date(SYSTEM_DATE_STR);
-    const ids = ['val-rntrc', 'val-rctrc', 'val-rcdc', 'val-rcv'];
+    const ids = ['t-val-rntrc', 't-val-rctrc', 't-val-rcdc', 't-val-rcv'];
     let expired = false;
     
     ids.forEach(id => {
@@ -226,10 +279,57 @@ function validateDates() {
     const status = document.getElementById('status-card');
     if (status) {
         if (expired) { 
-            status.innerText = "INATIVO"; status.className = "status-neon inactive"; 
-            notify("⚠️ ALERTA: Documentação Vencida!", "error"); 
+            status.innerText = "ATENÇÃO: VENCIDO"; status.className = "status-neon inactive"; 
+        } else { 
+            status.innerText = "DOCUMENTAÇÃO OK"; status.className = "status-neon active"; 
         }
-        else { status.innerText = "ATIVO"; status.className = "status-neon active"; }
+    }
+}
+
+async function handleSaveTransportadora() {
+    const cnpj = document.getElementById('t-cnpj').value.trim();
+    const razao = document.getElementById('t-razao').value.trim();
+
+    if (!cnpj || !razao) { notify("CNPJ e Razão Social são obrigatórios.", "error"); return; }
+
+    const zonasAtivas = Array.from(document.querySelectorAll('.zone-btn.selected')).map(btn => btn.innerText);
+
+    const novaTransp = {
+        cnpj: cnpj,
+        razao: razao,
+        fantasia: document.getElementById('t-fantasia').value.trim(),
+        rntrc: document.getElementById('t-rntrc').value.trim(),
+        rntrcValidade: document.getElementById('t-val-rntrc').value,
+        seguros: {
+            rctrc: { apolice: document.getElementById('t-rctrc').value.trim(), seguradora: document.getElementById('t-seg-rctrc').value.trim(), validade: document.getElementById('t-val-rctrc').value },
+            rcdc: { apolice: document.getElementById('t-rcdc').value.trim(), seguradora: document.getElementById('t-seg-rcdc').value.trim(), validade: document.getElementById('t-val-rcdc').value },
+            rcv: { apolice: document.getElementById('t-rcv').value.trim(), seguradora: document.getElementById('t-seg-rcv').value.trim(), validade: document.getElementById('t-val-rcv').value }
+        },
+        frotaPropriaPct: document.getElementById('t-frota').value.trim(),
+        idadeMedia: document.getElementById('t-idade').value.trim(),
+        zonas: zonasAtivas,
+        cadastradoPor: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+
+    if (!confirm(`Confirma o cadastro de ${razao}?`)) return;
+
+    const res = await StorageManager.saveTransportadora(novaTransp);
+    
+    if (res.success) {
+        notify("Salvo com sucesso!");
+        renderTransportadora(document.getElementById('workspace'));
+    } else {
+        notify(res.msg, "error");
+    }
+}
+
+async function handleDeleteTransportadora(id_doc) {
+    if (!confirm("Deseja apagar esta transportadora?")) return;
+    const res = await StorageManager.deleteTransportadora(id_doc);
+    if (res.success) {
+        notify("Excluída com sucesso.");
+        renderTransportadora(document.getElementById('workspace'));
     }
 }
 
@@ -603,4 +703,5 @@ function showBookingInfo(u,p,s,t) {
         }
     });
 }
+
 function clearData() { StorageManager.clearData(); }
