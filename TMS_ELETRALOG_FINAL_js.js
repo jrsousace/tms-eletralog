@@ -1954,12 +1954,9 @@ async function updateLogPanel(date, location) {
 /* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
 async function renderMonitor(container) {
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando Torre de Controle...</div>';
-
     const filterDate = document.getElementById('monitor-date') ? document.getElementById('monitor-date').value : SYSTEM_DATE_STR;
-
     const allAppts = await StorageManager.getAppointments();
     const dailyAppts = allAppts.filter(a => a.date === filterDate).sort((a, b) => a.time.localeCompare(b.time));
-
     // LÓGICA DE AGRUPAMENTO (CORRIGIDA: Agrupa por PO + NF + Local)
     const groupedAppts = {};
     dailyAppts.forEach(a => {
@@ -1992,6 +1989,24 @@ async function renderMonitor(container) {
     // Renderiza usando os grupos em vez das linhas individuais
     let rows = Object.values(groupedAppts).map(g => {
         let status = g.status || 'AGENDADO';
+        
+        // --- NOVA LÓGICA: ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO ---
+        if (status === 'AGENDADO') {
+            if (filterDate < SYSTEM_DATE_STR) {
+                // Se a data filtrada for ontem ou antes, e ninguém atendeu, está atrasado.
+                status = 'ATRASADO';
+            } else if (filterDate === SYSTEM_DATE_STR) {
+                // Se for hoje, compara com a hora exata do computador
+                const now = new Date();
+                const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+                
+                // Só considera atrasado se passar do horário FINAL da janela (timeEnd)
+                if (g.timeEnd < currentTime) { 
+                    status = 'ATRASADO';
+                }
+            }
+        }
+
         let statusColor = '#aaa';
 
         if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
@@ -2021,8 +2036,11 @@ async function renderMonitor(container) {
                 <span style="border: 1px solid ${statusColor}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">
                     ${status}
                 </span>
-                ${g.motivoOcorrencia ? `<br><span style="font-size:0.65rem; color:#FF8200; margin-top:4px; display:block;">Motivo: ${g.motivoOcorrencia}</span>` : ''}
-                ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs: ${g.statusObs}</span>` : ''}
+                
+                ${g.details.obs ? `<br><span style="font-size:0.65rem; color:var(--eletra-aqua); margin-top:6px; display:block;"><i class="fa-solid fa-circle-info"></i> Plan: ${g.details.obs}</span>` : ''}
+                
+                ${g.motivoOcorrencia ? `<span style="font-size:0.65rem; color:#FF8200; margin-top:4px; display:block;">Motivo: ${g.motivoOcorrencia}</span>` : ''}
+                ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs Operacional: ${g.statusObs}</span>` : ''}
             </td>
             <td style="text-align:right;">
                 <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px 10px;" onclick="openStatusModal('${idsString}', '${status}')" title="Atualizar Status"><i class="fa-solid fa-truck-ramp-box"></i> ATUALIZAR</button>
@@ -2078,7 +2096,6 @@ async function renderMonitor(container) {
                         <option value="EM DESCARGA">EM DESCARGA (DOCA)</option>
                         <option value="FINALIZADO">FINALIZADO / LIBERADO</option>
                         <option value="DIVERGÊNCIA">DIVERGÊNCIA / OCORRÊNCIA</option>
-                        <option value="ATRASADO">ATRASADO</option>
                         <option value="NO SHOW">NO SHOW (NÃO COMPARECEU)</option>
                     </select>
                 </div>
@@ -2113,14 +2130,18 @@ async function renderMonitor(container) {
 }
 
 // Controles do Modal de Status
-function openStatusModal(id_doc, currentStatus) {
-    document.getElementById('modal-id-doc').value = id_doc;
-    document.getElementById('modal-status').value = currentStatus;
+function openStatusModal(idsString, currentStatus) {
+    document.getElementById('modal-id-doc').value = idsString;
+    const statusSelect = document.getElementById('modal-status');
+    // Se o sistema marcou como ATRASADO automaticamente, a próxima ação óbvia é apontar a chegada
+    if (currentStatus === 'ATRASADO') {
+        statusSelect.value = 'CHEGOU';
+    } else {
+        statusSelect.value = currentStatus;
+    }
     document.getElementById('modal-obs').value = "";
     document.getElementById('modal-motivo').value = "";
-    
     toggleMotivoField(); // Verifica se precisa mostrar a aba de motivos
-    
     document.getElementById('modal-backdrop').style.display = 'block';
     document.getElementById('status-modal').style.display = 'block';
 }
