@@ -358,7 +358,7 @@ function loadPage(page, module) {
     else if (page === 'Motorista') { renderMotorista(workspace); }
     else if (page === 'Agendamentos') { renderAgendamentos(workspace); }
     else if (page === 'Monitor') { renderMonitor(workspace); }
-    else if (page === 'Ocorrências') { renderMonitor(workspace); }
+    else if (page === 'Ocorrências') { renderOcorrencias(workspace); }
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
