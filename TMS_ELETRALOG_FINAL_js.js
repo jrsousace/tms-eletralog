@@ -173,7 +173,8 @@ const StorageManager = {
                     status: newStatus,
                     statusObs: obs,
                     motivoOcorrencia: motivoOcorrencia,
-                    statusUpdatedAt: new Date().toISOString()
+                    statusUpdatedAt: new Date().toISOString(),
+                    statusUpdatedBy: CURRENT_USER.name // <- NOVA LINHA: Regista quem fez o apontamento
                 });
             });
             await batch.commit();
@@ -182,6 +183,19 @@ const StorageManager = {
         } catch(e) {
             console.error(e);
             return { success: false, msg: "Erro ao atualizar status em lote." };
+        }
+    },
+    saveTratativa: async function(id_doc, planoAcao) {
+        try {
+            await db.collection('agendamentos').doc(id_doc).update({
+                anomaliaTratada: true,
+                planoAcao: planoAcao,
+                status: 'RESOLVIDO' // Altera para resolvido
+            });
+            this.logAction("OCORRÊNCIA", `Tratativa salva p/ agendamento ${id_doc}`);
+            return { success: true };
+        } catch(e) {
+            return { success: false, msg: "Erro ao salvar tratativa." };
         }
     },
     saveUser: async function(newUser) {
@@ -344,6 +358,7 @@ function loadPage(page, module) {
     else if (page === 'Motorista') { renderMotorista(workspace); }
     else if (page === 'Agendamentos') { renderAgendamentos(workspace); }
     else if (page === 'Monitor') { renderMonitor(workspace); }
+    else if (page === 'Ocorrências') { renderMonitor(workspace); }
     else if (page === 'Logs do Sistema') { renderLogsPage(workspace); }
     else if (page === 'Perfis e Permissões') { renderUsersPage(workspace); }
     else { workspace.innerHTML = `<div class="card"><h3>${page}</h3><p>Em desenvolvimento.</p></div>`; }
@@ -2070,7 +2085,6 @@ async function renderMonitor(container) {
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px; position:relative;">
             <div class="props-tabs">
-                <button class="tab-btn active" onclick="switchTab('mon-inbound')">Monitor Inbound</button>
                 <button class="tab-btn" onclick="switchTab('mon-outbound')">Monitor Outbound</button>
             </div>
 
@@ -2078,7 +2092,7 @@ async function renderMonitor(container) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color); flex-wrap:wrap; gap:15px;">
                     <div>
                         <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
-                        <input type="date" id="monitor-date" value="${filterDate}" onblur="updateMonitorDate()" onkeydown="if(event.key === 'Enter') updateMonitorDate()" style="background:#0b0e11; color:white; border:1px solid #AAA; padding:5px; border-radius:3px;">
+                        <input type="date" id="monitor-date" value="${filterDate}" onblur="updateMonitorDate()" onkeydown="if(event.key === 'Enter') updateMonitorDate()" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
                         <button class="mark-btn" style="margin-left:10px;" onclick="updateMonitorDate()"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
                     </div>
                     <div style="display:flex; gap:25px;">
@@ -2220,6 +2234,204 @@ async function confirmAnomalia() {
     } else {
         notify("Erro ao registar anomalia.", "error");
     }
+}
+
+/* =========================================
+   MÓDULO: OCORRÊNCIAS (BUCKET LIST)
+   ========================================= */
+async function renderOcorrencias(container) {
+    container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Procurando anomalias na base...</div>';
+    
+    const allAppts = await StorageManager.getAppointments();
+    
+    // Filtra apenas as marcações que tiveram alguma anomalia registrada
+    const anomalias = allAppts.filter(a => a.status === 'ANOMALIA' || a.anomaliaTratada === true);
+    
+    // Separa entre Pendentes e Tratadas
+    const pendentes = anomalias.filter(a => !a.anomaliaTratada).sort((a,b) => new Date(b.date) - new Date(a.date));
+    const tratadas = anomalias.filter(a => a.anomaliaTratada).sort((a,b) => new Date(b.planoAcao.timestamp) - new Date(a.planoAcao.timestamp));
+
+    // BUCKET LIST: PENDENTES (Abre formulário de Ação)
+    let htmlPendentes = pendentes.map(a => `
+        <div class="card" style="border-left: 4px solid #FF3131; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: 0.2s;" onclick="toggleAnomaly('card-${a.id_doc}')" onmouseover="this.style.background='#222'" onmouseout="this.style.background='var(--bg-asfalto)'">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
+                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${a.date.split('-').reverse().join('/')} às ${a.time}</span><br>
+                    <span style="color: #FF3131; font-weight: bold; font-size: 0.85rem;"><i class="fa-solid fa-triangle-exclamation"></i> Causa Raiz: ${a.motivoOcorrencia}</span>
+                </div>
+                <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
+            </div>
+            
+            <div id="card-${a.id_doc}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 0.8rem; background: #0B0E11; padding: 10px; border-radius: 4px;">
+                    <div>
+                        <span style="color: #888;">PO:</span> <strong>${a.details.poMat}</strong><br>
+                        <span style="color: #888;">NF:</span> <strong>${a.details.nf}</strong><br>
+                        <span style="color: #888;">Transportadora:</span> <strong>${a.details.transp || '-'}</strong>
+                    </div>
+                    <div>
+                        <span style="color: #888;">Comprador:</span> <strong>${a.details.comprador}</strong><br>
+                        <span style="color: #888;">Solicitante:</span> <strong>${a.details.solicitante || '-'}</strong><br>
+                        <span style="color: #888;">Obs Portaria:</span> <span style="color: var(--eletra-orange);">${a.statusObs || 'Nenhuma'}</span>
+                    </div>
+                </div>
+                
+                <div style="background: #1A1D21; padding: 15px; border-radius: 4px; border: 1px dashed #444;">
+                    <h4 style="color: var(--eletra-aqua); margin-bottom: 10px; font-size: 0.85rem;"><i class="fa-solid fa-clipboard-check"></i> Plano de Ação Rápido (Tratativa)</h4>
+                    <div class="form-row-col" style="margin-bottom: 10px;">
+                        <textarea id="acao-${a.id_doc}" rows="2" style="width: 100%; padding: 10px; background: #0B0E11; color: white; border: 1px solid #444; border-radius: 4px; resize: none;" placeholder="Descreva o que foi feito. Ex: Fornecedor contatado. Reagendado para amanhã..."></textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <button class="mark-btn" style="border-color: #aaa; color: #aaa; font-size: 0.7rem;" 
+                            onclick="copyToClipboardHtml('${a.details.poMat}', '${a.details.nf}', '${a.details.fornecedor}', '${a.motivoOcorrencia}', '${a.statusObs}', '${a.details.comprador}', '${a.details.solicitante}', '${a.date.split('-').reverse().join('/')} às ${a.time}', '${a.statusUpdatedAt ? new Date(a.statusUpdatedAt).toLocaleString('pt-BR') : 'Data não registrada'}', '${a.statusUpdatedBy || 'Sistema / Não registrado'}')">
+                            <i class="fa-solid fa-envelope"></i> COPIAR P/ E-MAIL
+                        </button>
+                        <button class="mark-btn action apply" style="font-size: 0.75rem;" onclick="confirmTratativa('${a.id_doc}')"><i class="fa-solid fa-check"></i> SALVAR E ENCERRAR</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    if(pendentes.length === 0) htmlPendentes = `<div style="text-align:center; padding:40px; color:#888; font-style:italic;"><i class="fa-solid fa-check-double" style="font-size:2rem; color:#39FF14; display:block; margin-bottom:10px;"></i>Nenhuma ocorrência pendente! Tudo limpo.</div>`;
+
+    // BUCKET LIST: TRATADAS (Modo Leitura)
+    let htmlTratadas = tratadas.map(a => `
+        <div class="card" style="border-left: 4px solid #39FF14; padding: 15px; margin-bottom: 10px; cursor: pointer;" onclick="toggleAnomaly('card-${a.id_doc}')">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
+                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Resolvido em: ${new Date(a.planoAcao.timestamp).toLocaleDateString('pt-BR')}</span><br>
+                    <span style="color: #39FF14; font-weight: bold; font-size: 0.85rem;"><i class="fa-solid fa-check"></i> Tratado por: ${a.planoAcao.responsavel}</span>
+                </div>
+                <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
+            </div>
+            
+            <div id="card-${a.id_doc}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
+                <div style="font-size: 0.8rem; margin-bottom: 10px;">
+                    <span style="color: #888;">Anomalia Original:</span> <strong style="color: #FF3131;">${a.motivoOcorrencia}</strong> (PO: ${a.details.poMat} / NF: ${a.details.nf})
+                </div>
+                <div style="background: rgba(57, 255, 20, 0.05); padding: 10px; border-radius: 4px; border: 1px solid #39FF14; font-size: 0.85rem; color: #ddd;">
+                    <strong style="color: #39FF14;">Plano de Ação Executado:</strong><br>
+                    ${a.planoAcao.acao}
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    if(tratadas.length === 0) htmlTratadas = `<div style="text-align:center; padding:20px; color:#888;">Nenhuma tratativa no histórico.</div>`;
+
+    container.innerHTML = `
+        <div class="props-container" style="height:auto; min-height:650px;">
+            <div class="props-tabs">
+                <button class="tab-btn active" onclick="switchTab('oc-pendentes')">Fila de Pendências (<span style="color:#FF3131; font-weight:bold;">${pendentes.length}</span>)</button>
+                <button class="tab-btn" onclick="switchTab('oc-tratadas')">Histórico Tratadas (<span style="color:#39FF14; font-weight:bold;">${tratadas.length}</span>)</button>
+            </div>
+            
+            <div id="oc-pendentes" class="tab-content active" style="background: var(--bg-petroleo);">
+                ${htmlPendentes}
+            </div>
+            
+            <div id="oc-tratadas" class="tab-content" style="background: var(--bg-petroleo);">
+                ${htmlTratadas}
+            </div>
+        </div>
+    `;
+}
+
+// Expande ou retrai o Card da Ocorrência
+window.toggleAnomaly = function(id) {
+    const card = document.getElementById(id);
+    if(card) { card.style.display = card.style.display === 'none' ? 'block' : 'none'; }
+}
+
+// Salva a ação e encerra a ocorrência
+window.confirmTratativa = async function(id_doc) {
+    const acao = document.getElementById(`acao-${id_doc}`).value.trim();
+    if(!acao) { notify("Por favor, descreva a ação corretiva antes de encerrar.", "error"); return; }
+    
+    if(!confirm("Tem certeza que deseja salvar esta tratativa e encerrar a anomalia?")) return;
+    
+    const plano = {
+        acao: acao,
+        responsavel: CURRENT_USER.name,
+        timestamp: new Date().toISOString()
+    };
+    
+    const res = await StorageManager.saveTratativa(id_doc, plano);
+    if(res.success) {
+        notify("Ocorrência encerrada com sucesso!", "success");
+        renderOcorrencias(document.getElementById('workspace')); // Atualiza a tela
+    } else {
+        notify(res.msg, "error");
+    }
+}
+
+// O botão mágico: Gera Tabela HTML e copia para a Área de Transferência
+window.copyToClipboardHtml = function(po, nf, forn, motivo, obs, comp, sol, dataAg, dataAnom, userAnom) {
+    const html = `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+            <h3 style="color: #FF3131; border-bottom: 2px solid #FF3131; padding-bottom: 5px; margin-top: 0;">🚨 Alerta de Ocorrência Logística - Inbound</h3>
+            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 600px; border-color: #ccc;">
+                <tr style="background-color: #f9f9f9;">
+                    <th style="text-align: left; width: 35%; color: #555;">Fornecedor</th>
+                    <td style="font-weight: bold; color: #000;">${forn || 'Não informado no Agendamento'}</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; color: #555;">Nota Fiscal / PO</th>
+                    <td><strong>NF:</strong> ${nf} &nbsp;|&nbsp; <strong>PO:</strong> ${po}</td>
+                </tr>
+                <tr style="background-color: #f9f9f9;">
+                    <th style="text-align: left; color: #555;">Janela Agendada</th>
+                    <td style="font-weight: bold;">${dataAg}</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; color: #FF3131;">Causa Raiz da Falha</th>
+                    <td style="font-weight: bold; color: #FF3131;">${motivo}</td>
+                </tr>
+                <tr style="background-color: #f9f9f9;">
+                    <th style="text-align: left; color: #555;">Observação (Portaria)</th>
+                    <td>${obs || 'Sem observações adicionais.'}</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; color: #555;">Registro da Anomalia</th>
+                    <td style="font-size: 0.9em;">
+                        <strong>Apontado em:</strong> ${dataAnom}<br>
+                        <strong>Apontado por:</strong> ${userAnom}
+                    </td>
+                </tr>
+                <tr style="background-color: #f9f9f9;">
+                    <th style="text-align: left; color: #555;">Equipe Interna</th>
+                    <td><strong>Comprador:</strong> ${comp} &nbsp;|&nbsp; <strong>Solicitante:</strong> ${sol || '-'}</td>
+                </tr>
+            </table>
+            <br>
+            <p style="margin: 5px 0;">Prezados,</p>
+            <p style="margin: 5px 0;">Por favor, verifiquem o ocorrido acima e nos retornem com o plano de ação o mais breve possível para não impactarmos a operação.</p>
+            <p style="margin: 5px 0;">Atenciosamente,<br><strong>Logística Eletra Energy</strong></p>
+        </div>
+    `;
+    
+    // Truque para copiar o HTML rico (Tabela com cores)
+    const tempElement = document.createElement("div");
+    tempElement.innerHTML = html;
+    document.body.appendChild(tempElement);
+    
+    const range = document.createRange();
+    range.selectNode(tempElement);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    
+    try {
+        document.execCommand("copy");
+        notify("Tabela corporativa copiada! Cole no corpo do seu e-mail.", "info");
+    } catch (err) {
+        notify("Erro ao copiar para a área de transferência.", "error");
+    }
+    
+    window.getSelection().removeAllRanges();
+    document.body.removeChild(tempElement);
 }
 
 // Funções de BI
