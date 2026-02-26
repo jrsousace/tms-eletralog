@@ -2078,7 +2078,7 @@ async function renderMonitor(container) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color); flex-wrap:wrap; gap:15px;">
                     <div>
                         <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
-                        <input type="date" id="monitor-date" value="${filterDate}" onchange="updateMonitorDate()" onkeydown="if(event.key === 'Enter') updateMonitorDate()" style="background:#0b0e11; color:white; border:1px solid #FFF; padding:5px; border-radius:3px;">
+                        <input type="date" id="monitor-date" value="${filterDate}" onblur="updateMonitorDate()" onkeydown="if(event.key === 'Enter') updateMonitorDate()" style="background:#0b0e11; color:white; border:1px solid #AAA; padding:5px; border-radius:3px;">
                         <button class="mark-btn" style="margin-left:10px;" onclick="updateMonitorDate()"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
                     </div>
                     <div style="display:flex; gap:25px;">
@@ -2308,5 +2308,4 @@ function showBookingInfo(u,p,s,t,tipo,obs) {
         }
     });
 }
-
 function clearData() { StorageManager.clearData(); }
