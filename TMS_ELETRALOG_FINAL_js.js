@@ -1973,10 +1973,9 @@ async function updateLogPanel(date, location) {
 /* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
 async function renderMonitor(container) {
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando Torre de Controle...</div>';
-    
     // CORREÇÃO: Memória de Data e Captura Segura
     const dateInput = document.getElementById('monitor-date');
-    const filterDate = (dateInput && dateInput.value) ? dateInput.value : (window.currentMonitorDate || SYSTEM_DATE_STR);
+    const filterDate = window.currentMonitorDate || SYSTEM_DATE_STR;
     window.currentMonitorDate = filterDate; // Memoriza a data para não resetar durante a digitação
 
     const allAppts = await StorageManager.getAppointments();
@@ -2079,8 +2078,8 @@ async function renderMonitor(container) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color); flex-wrap:wrap; gap:15px;">
                     <div>
                         <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
-                        <input type="date" id="monitor-date" value="${filterDate}" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
-                        <button class="mark-btn" style="margin-left:10px;" onclick="renderMonitor(document.getElementById('workspace'))"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
+                        <input type="date" id="monitor-date" value="${filterDate}" onchange="updateMonitorDate()" onkeydown="if(event.key === 'Enter') updateMonitorDate()" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
+                        <button class="mark-btn" style="margin-left:10px;" onclick="updateMonitorDate()"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
                     </div>
                     <div style="display:flex; gap:25px;">
                         <div style="text-align:center;"><div style="font-size:1.4rem; font-weight:bold; color:var(--eletra-aqua);">${countAgendado}</div><div style="font-size:0.65rem; color:#888;">AGENDADOS</div></div>
@@ -2146,6 +2145,23 @@ async function renderMonitor(container) {
             </div>
         </div>
     `;
+}
+
+// --- CONTROLE DE DATA DO MONITOR ---
+window.updateMonitorDate = function() {
+    const dateInput = document.getElementById('monitor-date');
+    if (!dateInput) return;
+
+    let newDate = dateInput.value;
+    
+    // Regra de Negócio: Se a data estiver vazia ou for inválida após sair do campo, volta para hoje
+    if (!newDate) {
+        newDate = SYSTEM_DATE_STR;
+        notify("Data inválida. Retornando para a visão de hoje.", "info");
+    }
+    
+    window.currentMonitorDate = newDate;
+    renderMonitor(document.getElementById('workspace')); // Atualiza a tela com a nova data
 }
 
 // Controles do Modal de Status
