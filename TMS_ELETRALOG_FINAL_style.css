@@ -127,6 +127,28 @@ header.topbar h2 { color: var(--eletra-aqua); font-size: 1.1rem; text-transform:
 .form-row-col input, .form-row-col select { width: 100%; padding: 6px; background: #0B0E11; border: 1px solid var(--border-color); color: white; border-radius: 3px; }
 
 /* =========================================
+   ESTILIZAÇÃO DOS CAMPOS DE DATA E CALENDÁRIO
+   ========================================= */
+/* Força a janela do calendário a abrir no tema escuro do navegador */
+input[type="date"] {
+    color-scheme: dark; 
+}
+
+/* Muda a cor do ícone do calendário */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    
+    /* Torna o ícone totalmente BRANCO para combinar com o texto: */
+    filter: invert(1);     
+    /* SE PREFERIR O ÍCONE NA COR AZUL (ELETRA AQUA), APAGUE A LINHA DE CIMA E USE ESTA: */
+    /* filter: invert(0.6) sepia(1) saturate(50) hue-rotate(150deg); */
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 0.7;
+}
+
+/* =========================================
    RESPONSIVIDADE E MOBILE
    ========================================= */
 @media (max-width: 768px) {
