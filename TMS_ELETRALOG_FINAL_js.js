@@ -1971,21 +1971,25 @@ async function updateLogPanel(date, location) {
 }
 
 /* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
-/* --- MÓDULO MONITORAMENTO (TORRE DE CONTROLE) --- */
 async function renderMonitor(container) {
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando Torre de Controle...</div>';
-    const filterDate = document.getElementById('monitor-date') ? document.getElementById('monitor-date').value : SYSTEM_DATE_STR;
+    
+    // CORREÇÃO: Memória de Data e Captura Segura
+    const dateInput = document.getElementById('monitor-date');
+    const filterDate = (dateInput && dateInput.value) ? dateInput.value : (window.currentMonitorDate || SYSTEM_DATE_STR);
+    window.currentMonitorDate = filterDate; // Memoriza a data para não resetar durante a digitação
+
     const allAppts = await StorageManager.getAppointments();
     const dailyAppts = allAppts.filter(a => a.date === filterDate).sort((a, b) => a.time.localeCompare(b.time));
-    // LÓGICA DE AGRUPAMENTO (CORRIGIDA: Agrupa por PO + NF + Local)
+    
+    // LÓGICA DE AGRUPAMENTO (Agrupa por PO + NF + Local)
     const groupedAppts = {};
     dailyAppts.forEach(a => {
-        // A chave agora é a combinação exata do documento, o que garante 100% de precisão no agrupamento do caminhão
         const key = `${a.details.poMat}_${a.details.nf}_${a.location}`; 
         
         if(!groupedAppts[key]) {
             groupedAppts[key] = {
-                ids: [], // Guarda todos os IDs de docs do Firebase deste grupo
+                ids: [], 
                 timeStart: a.time,
                 timeEnd: a.time,
                 details: a.details,
@@ -1999,18 +2003,17 @@ async function renderMonitor(container) {
         
         groupedAppts[key].ids.push(a.id_doc);
         
-        // Garante que a janela de horário inicial e final estão sempre corretas
         if (a.time < groupedAppts[key].timeStart) groupedAppts[key].timeStart = a.time;
         if (a.time > groupedAppts[key].timeEnd) groupedAppts[key].timeEnd = a.time;
     });
 
     let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
 
-    // Renderiza usando os grupos
+    // Renderiza usando os grupos com alinhamento centralizado
     let rows = Object.values(groupedAppts).map(g => {
         let status = g.status || 'AGENDADO';
         
-        // --- ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO --- //
+        // ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO
         if (status === 'AGENDADO') {
             if (filterDate < SYSTEM_DATE_STR) {
                 status = 'ATRASADO';
@@ -2023,7 +2026,6 @@ async function renderMonitor(container) {
 
         let statusColor = '#aaa';
 
-        // Atualização da contagem de KPIs //
         if (status === 'AGENDADO') { countAgendado++; statusColor = 'var(--eletra-aqua)'; }
         else if (status === 'CHEGOU' || status === 'EM DESCARGA') { countPatio++; statusColor = 'var(--eletra-orange)'; }
         else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
@@ -2033,7 +2035,7 @@ async function renderMonitor(container) {
         let idsString = g.ids.join(',');
 
         return `
-        <tr style="border-bottom:1px solid #333;">
+        <tr style="border-bottom:1px solid #333; text-align:center;">
             <td style="padding:10px; font-weight:bold; color:var(--eletra-aqua); font-size:1.1rem; white-space:nowrap;">${timeWindow}</td>
             <td>
                 <span style="font-weight:bold;">${g.details.transp || 'Não Informada'}</span><br>
@@ -2052,8 +2054,8 @@ async function renderMonitor(container) {
                 ${g.motivoOcorrencia ? `<span style="font-size:0.65rem; color:#FF8200; margin-top:4px; display:block;">Motivo: ${g.motivoOcorrencia}</span>` : ''}
                 ${g.statusObs ? `<span style="font-size:0.65rem; color:#888; margin-top:2px; display:block;">Obs: ${g.statusObs}</span>` : ''}
             </td>
-            <td style="text-align:right;">
-                <div style="display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; width: 170px; float: right;">
+            <td>
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 170px; margin: 0 auto;">
                     <button class="mark-btn" style="border-color:var(--eletra-orange); color:var(--eletra-orange); padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'CHEGOU')">CHEGADA</button>
                     <button class="mark-btn" style="border-color:#00D4FF; color:#00D4FF; padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'EM DESCARGA')">DESCARGA</button>
                     <button class="mark-btn" style="border-color:#39FF14; color:#39FF14; padding:4px; font-size:0.6rem; flex: 1 1 45%;" onclick="quickStatusUpdate('${idsString}', 'FINALIZADO')">SAÍDA</button>
@@ -2065,6 +2067,7 @@ async function renderMonitor(container) {
     }).join('');
 
     if (Object.keys(groupedAppts).length === 0) rows = `<tr><td colspan="6" style="text-align:center; padding:15px; font-style:italic;">Nenhum veículo agendado para esta data.</td></tr>`;
+    
     container.innerHTML = `
         <div class="props-container" style="height:auto; min-height:650px; position:relative;">
             <div class="props-tabs">
@@ -2076,7 +2079,7 @@ async function renderMonitor(container) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:#1a1d21; padding:15px; border-radius:4px; border:1px solid var(--border-color); flex-wrap:wrap; gap:15px;">
                     <div>
                         <label style="font-size:0.8rem; color:#aaa; margin-right:10px;">Data Base:</label>
-                        <input type="date" id="monitor-date" value="${filterDate}" onchange="renderMonitor(document.getElementById('workspace'))" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
+                        <input type="date" id="monitor-date" value="${filterDate}" style="background:#0b0e11; color:white; border:1px solid #444; padding:5px; border-radius:3px;">
                         <button class="mark-btn" style="margin-left:10px;" onclick="renderMonitor(document.getElementById('workspace'))"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
                     </div>
                     <div style="display:flex; gap:25px;">
@@ -2089,7 +2092,16 @@ async function renderMonitor(container) {
 
                 <div style="overflow-x:auto;">
                     <table class="data-table">
-                        <thead><tr><th>Hora</th><th>Transportadora / Veículo</th><th>Documentos</th><th>Local</th><th>Status Operacional</th><th>Ação</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th style="text-align:center;">Hora</th>
+                                <th style="text-align:center;">Transportadora / Veículo</th>
+                                <th style="text-align:center;">Documentos</th>
+                                <th style="text-align:center;">Local</th>
+                                <th style="text-align:center;">Status Operacional</th>
+                                <th style="text-align:center;">Ação</th>
+                            </tr>
+                        </thead>
                         <tbody>${rows}</tbody>
                     </table>
                 </div>
@@ -2224,14 +2236,11 @@ async function printDailySchedule() {
     const allAppts = await StorageManager.getAppointments();
     const appts = allAppts.filter(a => a.date === date);
     if(appts.length === 0) { notify("Nada para imprimir."); return; }
-    
     const doca = appts.filter(a => a.location === 'Doca').sort((a,b)=>a.time.localeCompare(b.time));
     const portaria = appts.filter(a => a.location === 'Portaria').sort((a,b)=>a.time.localeCompare(b.time));
-    
     // Função interna de Agrupamento para a Impressão
     const generateGroupedRows = (list) => {
         if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Nenhum agendamento</td></tr>';
-        
         const grouped = {};
         list.forEach(a => {
             const key = `${a.details.poMat}_${a.details.nf}_${a.location}`;
@@ -2246,7 +2255,6 @@ async function printDailySchedule() {
             if (a.time < grouped[key].timeStart) grouped[key].timeStart = a.time;
             if (a.time > grouped[key].timeEnd) grouped[key].timeEnd = a.time;
         });
-        
         return Object.values(grouped).sort((a, b) => a.timeStart.localeCompare(b.timeStart)).map(g => {
             const timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
             const transpInfo = g.details.tipoVeiculo ? `${g.details.transp||'-'} (${g.details.tipoVeiculo})` : (g.details.transp||'-');
