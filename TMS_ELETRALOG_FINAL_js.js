@@ -185,14 +185,20 @@ const StorageManager = {
             return { success: false, msg: "Erro ao atualizar status em lote." };
         }
     },
-    saveTratativa: async function(id_doc, planoAcao) {
+    saveTratativa: async function(idsString, planoAcao) {
         try {
-            await db.collection('agendamentos').doc(id_doc).update({
-                anomaliaTratada: true,
-                planoAcao: planoAcao,
-                status: 'RESOLVIDO' // Altera para resolvido
+            const batch = db.batch();
+            const id_docs = idsString.split(',');
+            id_docs.forEach(id => {
+                const ref = db.collection('agendamentos').doc(id);
+                batch.update(ref, {
+                    anomaliaTratada: true,
+                    planoAcao: planoAcao,
+                    status: 'RESOLVIDO' 
+                });
             });
-            this.logAction("OCORRÊNCIA", `Tratativa salva p/ agendamento ${id_doc}`);
+            await batch.commit();
+            this.logAction("OCORRÊNCIA", `Tratativa salva p/ lote (${id_docs.length} slots)`);
             return { success: true };
         } catch(e) {
             return { success: false, msg: "Erro ao salvar tratativa." };
@@ -2259,82 +2265,133 @@ async function renderOcorrencias(container) {
     container.innerHTML = '<div style="color:white; padding:20px; text-align:center;"><i class="fa-solid fa-spinner fa-spin"></i> Procurando anomalias na base...</div>';
     
     const allAppts = await StorageManager.getAppointments();
-    
-    // Filtra apenas as marcações que tiveram alguma anomalia registrada
     const anomalias = allAppts.filter(a => a.status === 'ANOMALIA' || a.anomaliaTratada === true);
     
-    // Separa entre Pendentes e Tratadas
-    const pendentes = anomalias.filter(a => !a.anomaliaTratada).sort((a,b) => new Date(b.date) - new Date(a.date));
-    const tratadas = anomalias.filter(a => a.anomaliaTratada).sort((a,b) => new Date(b.planoAcao.timestamp) - new Date(a.planoAcao.timestamp));
+    // 1. AGRUPAMENTO INTELIGENTE (Mesma lógica do Monitor)
+    const groupedAnomalias = {};
+    anomalias.forEach(a => {
+        const key = a.timestamp || `${a.details.poMat}_${a.details.nf}_${a.location}`;
+        if (!groupedAnomalias[key]) {
+            groupedAnomalias[key] = {
+                ids: [],
+                timeStart: a.time,
+                timeEnd: a.time,
+                date: a.date,
+                details: a.details,
+                tipoFluxo: a.tipoFluxo,
+                motivoOcorrencia: a.motivoOcorrencia,
+                statusObs: a.statusObs,
+                statusUpdatedAt: a.statusUpdatedAt,
+                statusUpdatedBy: a.statusUpdatedBy,
+                anomaliaTratada: a.anomaliaTratada,
+                planoAcao: a.planoAcao
+            };
+        }
+        groupedAnomalias[key].ids.push(a.id_doc);
+        if (a.time < groupedAnomalias[key].timeStart) groupedAnomalias[key].timeStart = a.time;
+        if (a.time > groupedAnomalias[key].timeEnd) groupedAnomalias[key].timeEnd = a.time;
+        
+        // Se um slot antigo foi tratado, o grupo herda a tratativa
+        if (a.anomaliaTratada) {
+            groupedAnomalias[key].anomaliaTratada = true;
+            groupedAnomalias[key].planoAcao = a.planoAcao;
+        }
+    });
+
+    const calcRealEnd = (timeStr) => {
+        let [h, m] = timeStr.split(':').map(Number);
+        m += 10;
+        if (m >= 60) { h++; m -= 60; }
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    const groupedArray = Object.values(groupedAnomalias);
+
+    // Separa entre Pendentes e Tratadas baseadas nos GRUPOS
+    const pendentes = groupedArray.filter(g => !g.anomaliaTratada).sort((a,b) => new Date(b.date) - new Date(a.date));
+    const tratadas = groupedArray.filter(g => g.anomaliaTratada).sort((a,b) => new Date(b.planoAcao.timestamp) - new Date(a.planoAcao.timestamp));
 
     // BUCKET LIST: PENDENTES (Abre formulário de Ação)
-    let htmlPendentes = pendentes.map(a => `
-        <div class="card" style="border-left: 4px solid #FF3131; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: 0.2s;" onclick="toggleAnomaly('card-${a.id_doc}')" onmouseover="this.style.background='#222'" onmouseout="this.style.background='var(--bg-asfalto)'">
+    let htmlPendentes = pendentes.map(g => {
+        const timeWindow = `${g.timeStart} às ${calcRealEnd(g.timeEnd)}`;
+        const idsString = g.ids.join(',');
+        const elementId = g.ids[0]; // Usado para abrir/fechar o card corretamente
+
+        return `
+        <div class="card" style="border-left: 4px solid #FF3131; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: 0.2s;" onclick="toggleAnomaly('card-${elementId}')" onmouseover="this.style.background='#222'" onmouseout="this.style.background='var(--bg-asfalto)'">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${a.tipoFluxo || 'INBOUND'}</span>
-                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
-                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${a.date.split('-').reverse().join('/')} às ${a.time}</span><br>
+                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${g.tipoFluxo || 'INBOUND'}</span>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${g.details.fornecedor || g.details.transp || 'Não Informado'}</strong>
+                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${g.date.split('-').reverse().join('/')} - <strong style="color:white;">${timeWindow}</strong></span><br>
+                    <span style="color: #FF3131; font-weight: bold; font-size: 0.85rem; margin-top:5px; display:inline-block;"><i class="fa-solid fa-triangle-exclamation"></i> Causa Raiz: ${g.motivoOcorrencia}</span>
                 </div>
                 <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
             </div>
             
-            <div id="card-${a.id_doc}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
+            <div id="card-${elementId}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 0.8rem; background: #0B0E11; padding: 10px; border-radius: 4px;">
                     <div>
-                        <span style="color: #888;">PO:</span> <strong>${a.details.poMat}</strong><br>
-                        <span style="color: #888;">NF:</span> <strong>${a.details.nf}</strong><br>
-                        <span style="color: #888;">Transportadora:</span> <strong>${a.details.transp || '-'}</strong>
+                        <span style="color: #888;">PO:</span> <strong>${g.details.poMat}</strong><br>
+                        <span style="color: #888;">NF:</span> <strong>${g.details.nf}</strong><br>
+                        <span style="color: #888;">Transportadora:</span> <strong>${g.details.transp || '-'}</strong>
                     </div>
                     <div>
-                        <span style="color: #888;">Comprador:</span> <strong>${a.details.comprador}</strong><br>
-                        <span style="color: #888;">Solicitante:</span> <strong>${a.details.solicitante || '-'}</strong><br>
-                        <span style="color: #888;">Obs Portaria:</span> <span style="color: var(--eletra-orange);">${a.statusObs || 'Nenhuma'}</span>
+                        <span style="color: #888;">Comprador:</span> <strong>${g.details.comprador}</strong><br>
+                        <span style="color: #888;">Solicitante:</span> <strong>${g.details.solicitante || '-'}</strong><br>
+                        <span style="color: #888;">Obs Portaria:</span> <span style="color: var(--eletra-orange);">${g.statusObs || 'Nenhuma'}</span>
                     </div>
                 </div>
                 
                 <div style="background: #1A1D21; padding: 15px; border-radius: 4px; border: 1px dashed #444;">
                     <h4 style="color: var(--eletra-aqua); margin-bottom: 10px; font-size: 0.85rem;"><i class="fa-solid fa-clipboard-check"></i> Plano de Ação Rápido (Tratativa)</h4>
                     <div class="form-row-col" style="margin-bottom: 10px;">
-                        <textarea id="acao-${a.id_doc}" rows="2" style="width: 100%; padding: 10px; background: #0B0E11; color: white; border: 1px solid #444; border-radius: 4px; resize: none;" placeholder="Descreva o que foi feito. Ex: Fornecedor contatado. Reagendado para amanhã..."></textarea>
+                        <textarea id="acao-${elementId}" rows="2" style="width: 100%; padding: 10px; background: #0B0E11; color: white; border: 1px solid #444; border-radius: 4px; resize: none;" placeholder="Descreva o que foi feito. Ex: Fornecedor contatado. Reagendado para amanhã..."></textarea>
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                         <button class="mark-btn" style="border-color: #aaa; color: #aaa; font-size: 0.7rem;" 
-                            onclick="copyToClipboardHtml('${a.details.poMat}', '${a.details.nf}', '${a.details.fornecedor}', '${a.motivoOcorrencia}', '${a.statusObs}', '${a.details.comprador}', '${a.details.solicitante}', '${a.date.split('-').reverse().join('/')} às ${a.time}', '${a.statusUpdatedAt ? new Date(a.statusUpdatedAt).toLocaleString('pt-BR') : 'Data não registrada'}', '${a.statusUpdatedBy || 'Sistema'}', '${a.tipoFluxo || 'INBOUND'}')">
+                            onclick="copyToClipboardHtml('${g.details.poMat}', '${g.details.nf}', '${g.details.fornecedor}', '${g.motivoOcorrencia}', '${g.statusObs}', '${g.details.comprador}', '${g.details.solicitante}', '${g.date.split('-').reverse().join('/')} - ${timeWindow}', '${g.statusUpdatedAt ? new Date(g.statusUpdatedAt).toLocaleString('pt-BR') : 'Data não registrada'}', '${g.statusUpdatedBy || 'Sistema'}', '${g.tipoFluxo || 'INBOUND'}')">
                             <i class="fa-solid fa-envelope"></i> COPIAR P/ E-MAIL
                         </button>
-                        <button class="mark-btn action apply" style="font-size: 0.75rem;" onclick="confirmTratativa('${a.id_doc}')"><i class="fa-solid fa-check"></i> SALVAR E ENCERRAR</button>
+                        <button class="mark-btn action apply" style="font-size: 0.75rem;" onclick="confirmTratativa('${idsString}', '${elementId}')"><i class="fa-solid fa-check"></i> SALVAR E ENCERRAR</button>
                     </div>
                 </div>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 
     if(pendentes.length === 0) htmlPendentes = `<div style="text-align:center; padding:40px; color:#888; font-style:italic;"><i class="fa-solid fa-check-double" style="font-size:2rem; color:#39FF14; display:block; margin-bottom:10px;"></i>Nenhuma ocorrência pendente! Tudo limpo.</div>`;
 
     // BUCKET LIST: TRATADAS (Modo Leitura)
-    let htmlTratadas = tratadas.map(a => `
-        <div class="card" style="border-left: 4px solid #39FF14; padding: 15px; margin-bottom: 10px; cursor: pointer;" onclick="toggleAnomaly('card-${a.id_doc}')">
+    let htmlTratadas = tratadas.map(g => {
+        const timeWindow = `${g.timeStart} às ${calcRealEnd(g.timeEnd)}`;
+        const elementId = g.ids[0];
+
+        return `
+        <div class="card" style="border-left: 4px solid #39FF14; padding: 15px; margin-bottom: 10px; cursor: pointer;" onclick="toggleAnomaly('card-${elementId}')">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${a.tipoFluxo || 'INBOUND'}</span>
-                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
-                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${a.date.split('-').reverse().join('/')} às ${a.time}</span><br>
+                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${g.tipoFluxo || 'INBOUND'}</span>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${g.details.fornecedor || g.details.transp || 'Não Informado'}</strong>
+                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${g.date.split('-').reverse().join('/')} - <strong style="color:white;">${timeWindow}</strong></span><br>
+                    <span style="color: #39FF14; font-weight: bold; font-size: 0.85rem; margin-top:5px; display:inline-block;"><i class="fa-solid fa-check"></i> Tratado por: ${g.planoAcao.responsavel}</span>
                 </div>
                 <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
             </div>
             
-            <div id="card-${a.id_doc}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
+            <div id="card-${elementId}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; cursor: default;" onclick="event.stopPropagation()">
                 <div style="font-size: 0.8rem; margin-bottom: 10px;">
-                    <span style="color: #888;">Anomalia Original:</span> <strong style="color: #FF3131;">${a.motivoOcorrencia}</strong> (PO: ${a.details.poMat} / NF: ${a.details.nf})
+                    <span style="color: #888;">Anomalia Original:</span> <strong style="color: #FF3131;">${g.motivoOcorrencia}</strong> (PO: ${g.details.poMat} / NF: ${g.details.nf})
                 </div>
                 <div style="background: rgba(57, 255, 20, 0.05); padding: 10px; border-radius: 4px; border: 1px solid #39FF14; font-size: 0.85rem; color: #ddd;">
                     <strong style="color: #39FF14;">Plano de Ação Executado:</strong><br>
-                    ${a.planoAcao.acao}
+                    ${g.planoAcao.acao}
                 </div>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 
     if(tratadas.length === 0) htmlTratadas = `<div style="text-align:center; padding:20px; color:#888;">Nenhuma tratativa no histórico.</div>`;
 
@@ -2362,12 +2419,12 @@ window.toggleAnomaly = function(id) {
     if(card) { card.style.display = card.style.display === 'none' ? 'block' : 'none'; }
 }
 
-// Salva a ação e encerra a ocorrência
-window.confirmTratativa = async function(id_doc) {
-    const acao = document.getElementById(`acao-${id_doc}`).value.trim();
+// Salva a ação e encerra a ocorrência em LOTE
+window.confirmTratativa = async function(idsString, elementId) {
+    const acao = document.getElementById(`acao-${elementId}`).value.trim();
     if(!acao) { notify("Por favor, descreva a ação corretiva antes de encerrar.", "error"); return; }
     
-    if(!confirm("Tem certeza que deseja salvar esta tratativa e encerrar a anomalia?")) return;
+    if(!confirm("Tem certeza que deseja salvar esta tratativa e encerrar a anomalia para todo o agrupamento?")) return;
     
     const plano = {
         acao: acao,
@@ -2375,7 +2432,7 @@ window.confirmTratativa = async function(id_doc) {
         timestamp: new Date().toISOString()
     };
     
-    const res = await StorageManager.saveTratativa(id_doc, plano);
+    const res = await StorageManager.saveTratativa(idsString, plano);
     if(res.success) {
         notify("Ocorrência encerrada com sucesso!", "success");
         renderOcorrencias(document.getElementById('workspace')); // Atualiza a tela
@@ -2425,7 +2482,6 @@ window.copyToClipboardHtml = function(po, nf, forn, motivo, obs, comp, sol, data
             <br>
             <p style="margin: 5px 0;">Prezados,</p>
             <p style="margin: 5px 0;">Por favor, verifiquem o ocorrido acima e nos retornem com o plano de ação o mais breve possível para não impactarmos a operação.</p>
-            <p style="margin: 5px 0;">Atenciosamente,<br><strong>Logística Eletra Energy</strong></p>
         </div>
     `;
     
