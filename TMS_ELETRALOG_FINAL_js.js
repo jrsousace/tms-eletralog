@@ -1826,6 +1826,7 @@ async function saveBooking() {
         userId: CURRENT_USER.id,
         userName: CURRENT_USER.name,
         timestamp: loteTimestamp, // Usa a mesma etiqueta de tempo para todos os slots
+        tipoFluxo: 'INBOUND',
         details: { poMat, nf, fornecedor, cnpjFornecedor, solicitante, comprador, transp, cnpjTransp, poFrete, ctrc, tipoVeiculo, obs }
     }));
 
@@ -1947,10 +1948,10 @@ async function updateLogPanel(date, location) {
     const allAppts = await StorageManager.getAppointments();
     const currentAppts = allAppts.filter(a => a.date===date && a.location===location).sort((a,b)=>a.time.localeCompare(b.time));
     
-    // 1. LÓGICA DE AGRUPAMENTO
+    // 1. LÓGICA DE AGRUPAMENTO (Por Agendamento exato)
     const groupedAppts = {};
     currentAppts.forEach(a => {
-        const key = `${a.details.poMat}_${a.details.nf}_${a.location}`; 
+        const key = a.timestamp || `${a.details.poMat}_${a.details.nf}_${a.location}`; 
         if(!groupedAppts[key]) {
             groupedAppts[key] = {
                 timeStart: a.time,
@@ -1959,19 +1960,24 @@ async function updateLogPanel(date, location) {
                 userName: a.userName
             };
         }
-        // Atualiza a janela de tempo
         if (a.time < groupedAppts[key].timeStart) groupedAppts[key].timeStart = a.time;
         if (a.time > groupedAppts[key].timeEnd) groupedAppts[key].timeEnd = a.time;
     });
+
+    const calcRealEnd = (timeStr) => {
+        let [h, m] = timeStr.split(':').map(Number);
+        m += 10;
+        if (m >= 60) { h++; m -= 60; }
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
 
     let html = `<h4 style="color:var(--eletra-aqua); margin-bottom:5px; border-bottom:1px solid #444; font-size:0.75rem;">Agenda Vigente (${date.split('-').reverse().join('/')} - ${location})</h4>`;
     
     const groupedValues = Object.values(groupedAppts);
     if (groupedValues.length === 0) { html += `<div style="font-style:italic; color:#777; font-size:0.7rem;">Vazio.</div>`; } 
     else {
-        // 2. RENDERIZAÇÃO AGRUPADA
         groupedValues.sort((a, b) => a.timeStart.localeCompare(b.timeStart)).forEach(g => { 
-            const timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+            const timeWindow = `${g.timeStart} às ${calcRealEnd(g.timeEnd)}`;
             const tipoDesc = g.details.tipoVeiculo ? ` | Veículo: ${g.details.tipoVeiculo}` : '';
             html += `<div style="border-bottom:1px solid #333; padding:4px 0; font-size:0.75rem;"><strong style="color:#fff;">${timeWindow}</strong> | Sol: ${g.details.solicitante||'-'} | Comp: ${g.details.comprador||'-'}${tipoDesc} | <span style="color:#888;">Agendado: ${g.userName}</span></div>`; 
         });
@@ -1999,7 +2005,7 @@ async function renderMonitor(container) {
     // LÓGICA DE AGRUPAMENTO (Agrupa por PO + NF + Local)
     const groupedAppts = {};
     dailyAppts.forEach(a => {
-        const key = `${a.details.poMat}_${a.details.nf}_${a.location}`; 
+        const key = a.timestamp || `${a.details.poMat}_${a.details.nf}_${a.location}`;
         
         if(!groupedAppts[key]) {
             groupedAppts[key] = {
@@ -2023,18 +2029,27 @@ async function renderMonitor(container) {
 
     let countAgendado = 0, countPatio = 0, countFim = 0, countOcorrencia = 0;
 
+    // Helper para somar 10 minutos no último slot e mostrar a janela real (ex: 08:00 às 08:30)
+    const calcRealEnd = (timeStr) => {
+        let [h, m] = timeStr.split(':').map(Number);
+        m += 10;
+        if (m >= 60) { h++; m -= 60; }
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
     // Renderiza usando os grupos com alinhamento centralizado
     let rows = Object.values(groupedAppts).map(g => {
         let status = g.status || 'AGENDADO';
+        const realEndTime = calcRealEnd(g.timeEnd);
         
-        // ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO
+        // ATRASO AUTOMÁTICO VINCULADO AO RELÓGIO (Usando o final real da janela)
         if (status === 'AGENDADO') {
             if (filterDate < SYSTEM_DATE_STR) {
                 status = 'ATRASADO';
             } else if (filterDate === SYSTEM_DATE_STR) {
                 const now = new Date();
                 const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-                if (g.timeEnd < currentTime) { status = 'ATRASADO'; }
+                if (realEndTime < currentTime) { status = 'ATRASADO'; }
             }
         }
 
@@ -2045,7 +2060,8 @@ async function renderMonitor(container) {
         else if (status === 'FINALIZADO') { countFim++; statusColor = '#39FF14'; }
         else if (status === 'ATRASADO' || status === 'ANOMALIA') { countOcorrencia++; statusColor = '#FF3131'; }
 
-        let timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+        // Como cada slot tem 10 min, a exibição será sempre um intervalo contínuo
+        let timeWindow = `${g.timeStart} às ${realEndTime}`;
         let idsString = g.ids.join(',');
 
         return `
@@ -2256,9 +2272,9 @@ async function renderOcorrencias(container) {
         <div class="card" style="border-left: 4px solid #FF3131; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: 0.2s;" onclick="toggleAnomaly('card-${a.id_doc}')" onmouseover="this.style.background='#222'" onmouseout="this.style.background='var(--bg-asfalto)'">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
+                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${a.tipoFluxo || 'INBOUND'}</span>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
                     <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${a.date.split('-').reverse().join('/')} às ${a.time}</span><br>
-                    <span style="color: #FF3131; font-weight: bold; font-size: 0.85rem;"><i class="fa-solid fa-triangle-exclamation"></i> Causa Raiz: ${a.motivoOcorrencia}</span>
                 </div>
                 <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
             </div>
@@ -2284,7 +2300,7 @@ async function renderOcorrencias(container) {
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                         <button class="mark-btn" style="border-color: #aaa; color: #aaa; font-size: 0.7rem;" 
-                            onclick="copyToClipboardHtml('${a.details.poMat}', '${a.details.nf}', '${a.details.fornecedor}', '${a.motivoOcorrencia}', '${a.statusObs}', '${a.details.comprador}', '${a.details.solicitante}', '${a.date.split('-').reverse().join('/')} às ${a.time}', '${a.statusUpdatedAt ? new Date(a.statusUpdatedAt).toLocaleString('pt-BR') : 'Data não registrada'}', '${a.statusUpdatedBy || 'Sistema / Não registrado'}')">
+                            onclick="copyToClipboardHtml('${a.details.poMat}', '${a.details.nf}', '${a.details.fornecedor}', '${a.motivoOcorrencia}', '${a.statusObs}', '${a.details.comprador}', '${a.details.solicitante}', '${a.date.split('-').reverse().join('/')} às ${a.time}', '${a.statusUpdatedAt ? new Date(a.statusUpdatedAt).toLocaleString('pt-BR') : 'Data não registrada'}', '${a.statusUpdatedBy || 'Sistema'}', '${a.tipoFluxo || 'INBOUND'}')">
                             <i class="fa-solid fa-envelope"></i> COPIAR P/ E-MAIL
                         </button>
                         <button class="mark-btn action apply" style="font-size: 0.75rem;" onclick="confirmTratativa('${a.id_doc}')"><i class="fa-solid fa-check"></i> SALVAR E ENCERRAR</button>
@@ -2301,9 +2317,9 @@ async function renderOcorrencias(container) {
         <div class="card" style="border-left: 4px solid #39FF14; padding: 15px; margin-bottom: 10px; cursor: pointer;" onclick="toggleAnomaly('card-${a.id_doc}')">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
-                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Resolvido em: ${new Date(a.planoAcao.timestamp).toLocaleDateString('pt-BR')}</span><br>
-                    <span style="color: #39FF14; font-weight: bold; font-size: 0.85rem;"><i class="fa-solid fa-check"></i> Tratado por: ${a.planoAcao.responsavel}</span>
+                    <span style="background: var(--eletra-aqua); color: var(--bg-petroleo); padding: 2px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; margin-right: 8px; vertical-align: middle;">${a.tipoFluxo || 'INBOUND'}</span>
+                    <strong style="color: var(--eletra-aqua); font-size: 1.1rem; vertical-align: middle;">${a.details.fornecedor || a.details.transp || 'Não Informado'}</strong>
+                    <span style="font-size: 0.8rem; color: #888; margin-left: 10px;">Data do Agendamento: ${a.date.split('-').reverse().join('/')} às ${a.time}</span><br>
                 </div>
                 <div><i class="fa-solid fa-chevron-down" style="color: #aaa;"></i></div>
             </div>
@@ -2369,10 +2385,10 @@ window.confirmTratativa = async function(id_doc) {
 }
 
 // O botão mágico: Gera Tabela HTML e copia para a Área de Transferência
-window.copyToClipboardHtml = function(po, nf, forn, motivo, obs, comp, sol, dataAg, dataAnom, userAnom) {
+window.copyToClipboardHtml = function(po, nf, forn, motivo, obs, comp, sol, dataAg, dataAnom, userAnom, fluxo) {
     const html = `
         <div style="font-family: Arial, sans-serif; color: #333;">
-            <h3 style="color: #FF3131; border-bottom: 2px solid #FF3131; padding-bottom: 5px; margin-top: 0;">🚨 Alerta de Ocorrência Logística - Inbound</h3>
+            <h3 style="color: #FF3131; border-bottom: 2px solid #FF3131; padding-bottom: 5px; margin-top: 0;">🚨 Alerta de Ocorrência Logística - ${fluxo || 'INBOUND'}</h3>
             <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 600px; border-color: #ccc;">
                 <tr style="background-color: #f9f9f9;">
                     <th style="text-align: left; width: 35%; color: #555;">Fornecedor</th>
@@ -2464,14 +2480,24 @@ async function printDailySchedule() {
     const allAppts = await StorageManager.getAppointments();
     const appts = allAppts.filter(a => a.date === date);
     if(appts.length === 0) { notify("Nada para imprimir."); return; }
+    
     const doca = appts.filter(a => a.location === 'Doca').sort((a,b)=>a.time.localeCompare(b.time));
     const portaria = appts.filter(a => a.location === 'Portaria').sort((a,b)=>a.time.localeCompare(b.time));
+    
     // Função interna de Agrupamento para a Impressão
     const generateGroupedRows = (list) => {
         if(list.length === 0) return '<tr><td colspan="7" style="text-align:center;">Nenhum agendamento</td></tr>';
+        
+        const calcRealEnd = (timeStr) => {
+            let [h, m] = timeStr.split(':').map(Number);
+            m += 10;
+            if (m >= 60) { h++; m -= 60; }
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        };
+
         const grouped = {};
         list.forEach(a => {
-            const key = `${a.details.poMat}_${a.details.nf}_${a.location}`;
+            const key = a.timestamp || `${a.details.poMat}_${a.details.nf}_${a.location}`;
             if(!grouped[key]) {
                 grouped[key] = {
                     timeStart: a.time,
@@ -2483,8 +2509,9 @@ async function printDailySchedule() {
             if (a.time < grouped[key].timeStart) grouped[key].timeStart = a.time;
             if (a.time > grouped[key].timeEnd) grouped[key].timeEnd = a.time;
         });
+        
         return Object.values(grouped).sort((a, b) => a.timeStart.localeCompare(b.timeStart)).map(g => {
-            const timeWindow = g.timeStart === g.timeEnd ? g.timeStart : `${g.timeStart} às ${g.timeEnd}`;
+            const timeWindow = `${g.timeStart} às ${calcRealEnd(g.timeEnd)}`;
             const transpInfo = g.details.tipoVeiculo ? `${g.details.transp||'-'} (${g.details.tipoVeiculo})` : (g.details.transp||'-');
             return `<tr><td style="white-space:nowrap;"><b>${timeWindow}</b></td><td>${transpInfo}</td><td>${g.details.ctrc||'-'}</td><td>${g.details.solicitante||'-'}</td><td>${g.details.comprador||'-'}</td><td>${g.userName}</td><td>PO: ${g.details.poMat} / NF: ${g.details.nf}</td></tr>`;
         }).join('');
