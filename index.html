@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
     <title>EletraLog TMS | Gestão Logística</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -80,6 +80,7 @@
                     <span><i class="fa-solid fa-file-invoice-dollar main-icon"></i> FINANCEIRO</span><i class="fa-solid fa-chevron-down fa-xs"></i>
                 </div>
                 <div class="sub-menu">
+                    <div class="sub-item" onclick="loadPage('Mural de Fretes', 'FINANCEIRO')" style="color: var(--eletra-orange);">Mural de Fretes (BID)</div>
                     <div class="sub-item" onclick="loadPage('Consolidação', 'FINANCEIRO')">Consolidação (Alçada)</div>
                     <div class="sub-item" onclick="loadPage('Conta Corrente Transp.', 'FINANCEIRO')">Conta Corrente Transp.</div>
                     <div class="sub-item" onclick="loadPage('Auditoria de Frete', 'FINANCEIRO')">Auditoria de Frete</div>
@@ -103,9 +104,9 @@
                     <span><i class="fa-solid fa-chart-line main-icon"></i> RELATÓRIOS</span><i class="fa-solid fa-chevron-down fa-xs"></i>
                 </div>
                 <div class="sub-menu">
-                    <div class="sub-item" onclick="loadPage('Performance (OTIF)', 'RELATÓRIOS')">Performance (OTIF)</div>
-                    <div class="sub-item" onclick="loadPage('Custo por Tonelada', 'RELATÓRIOS')">Custo por Tonelada</div>
-                    <div class="sub-item" onclick="loadPage('Ocupação de Frota', 'RELATÓRIOS')">Ocupação de Frota</div>
+                    <div class="sub-item" onclick="loadPage('Inbound OTD', 'RELATÓRIOS')">Inbound OTD</div>
+                    <div class="sub-item" onclick="loadPage('Inbound Efetividade', 'RELATÓRIOS')">Inbound Efetividade</div>
+                    <div class="sub-item" onclick="loadPage('Inbound Lead Times', 'RELATÓRIOS')">Inbound Lead Times</div>
                 </div>
             </div>
 

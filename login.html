@@ -21,15 +21,16 @@
 <body>
     <div class="login-card">
         <h1>Eletra<span>Log</span></h1>
-        <input type="text" id="user" placeholder="Usuário">
+        <input type="text" id="email" placeholder="Login">
         <input type="password" id="pass" placeholder="Senha">
         <button id="btn-entrar" onclick="performLogin()">ENTRAR</button>
-        <div id="loading">Conectando ao servidor...</div>
-        <div id="error-msg" class="error">Usuário ou senha inválidos</div>
-        <div class="hint">Primeiro acesso:<br>User: <strong>admin</strong> | Senha: <strong>admin</strong></div>
+        <div id="loading">Autenticando com segurança...</div>
+        <div id="error-msg" class="error">Acesso Negado. Verifique as credenciais.</div>
+        <div class="hint">Acesso restrito a colaboradores autorizados.</div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <script>
@@ -45,48 +46,50 @@
         };
         
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+        const auth = firebase.auth();
 
         async function performLogin() {
-            const u = document.getElementById('user').value.trim();
+            let email = document.getElementById('email').value.trim(); // Mudou para let
             const p = document.getElementById('pass').value.trim();
             const btn = document.getElementById('btn-entrar');
             const load = document.getElementById('loading');
             const err = document.getElementById('error-msg');
 
-            if(!u || !p) return;
+            if(!email || !p) {
+                err.innerText = "Preencha login e senha.";
+                err.style.display = 'block';
+                return;
+            }
+
+            // O TRUQUE: Se o usuário não digitou '@', o sistema completa automaticamente
+            if (!email.includes('@')) {
+                email = email + '@eletraenergy.com';
+            }
 
             btn.disabled = true;
             load.style.display = 'block';
             err.style.display = 'none';
 
             try {
-                // 1. Busca usuários no Banco Online
-                const snapshot = await db.collection('usuarios').get();
-                let users = snapshot.docs.map(doc => doc.data());
-
-                // 2. Auto-Bootstrap: SE NÃO EXISTIR NINGUÉM, CRIA O ADMIN.
-                // PARA MUDAR A SENHA DE UM ADMIN JÁ CRIADO, EDITE DIRETAMENTE NO FIREBASE CONSOLE.
-                if (users.length === 0) {
-                    const masterUser = { id: 'master_01', name: 'Administrador Master', user: 'admin', pass: 'admin', role: 'MASTER', matricula: '001' };
-                    await db.collection('usuarios').add(masterUser);
-                    users = [masterUser];
-                }
-
-                // 3. Verifica credenciais
-                const found = users.find(user => user.user === u && user.pass === p);
-
-                if (found) {
-                    localStorage.setItem('eletra_session', JSON.stringify(found));
-                    window.location.href = 'index.html'; 
-                } else {
-                    err.style.display = 'block';
-                    btn.disabled = false;
-                    load.style.display = 'none';
-                }
+                // Autenticação Real no Servidor da Google
+                await auth.signInWithEmailAndPassword(email, p);
+                
+                // Sucesso! Redireciona para o sistema.
+                window.location.href = 'index.html';
+                
             } catch (error) {
-                console.error(error);
-                alert("Erro ao conectar com o banco de dados. Verifique sua conexão.");
+                console.error("Erro Auth:", error.code);
+                err.style.display = 'block';
+                
+                // Tratamento amigável de erros
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+                    err.innerText = "E-mail ou senha incorretos.";
+                } else if (error.code === 'auth/invalid-email') {
+                    err.innerText = "Formato de e-mail inválido.";
+                } else {
+                    err.innerText = "Erro ao tentar conectar. Tente novamente.";
+                }
+                
                 btn.disabled = false;
                 load.style.display = 'none';
             }
